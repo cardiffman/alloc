@@ -1,0 +1,222 @@
+#!/usr/bin/expect
+spawn ./gcstringlisp.exe
+expect -regexp "> $"
+send "(defun fact (n) (if (equal n 0) 1 (* n (fact (- n 1)))))\r"
+#expect "fact"
+expect {
+  -re "> $" {}
+  eof { send_user "end\r"; exit }
+  timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 0)\r"
+expect {
+   -re "> $" {  }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+#expect -regexp "^> "
+send "(fact 12)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 12.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 13)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 13.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 100.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 1000.0)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 3)\r"
+expect {
+-re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+exit
+send "(fact 5)\r"
+expect {
+   -re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
+send "(fact 13)\r"
+expect {
+	-re "> $" { }
+   "$ " { send_user "bash prompt!\r"; exit }
+   eof { send_user "end\r"; exit }
+   timeout { send_user "uh-oh!\r"; send "\03"; exit }
+}
