@@ -52,9 +52,12 @@ element string_get_substr(element str, element first);
 element string_get_substr(element str, element first, element count);
 element string_get_size(element str);
 
-void ShowCar(std::ostream& out, const element &car);
-void ShowList(std::ostream& out, const element& cons);
-void appel_collect(element*& root);
+//void ShowCar(std::ostream& out, const element &car);
+//void ShowList(std::ostream& out, const element& cons);
+void ShowElement(std::ostream& os, element e);
+void gc_add_root(element* root);
+void gc_unroot(element* root);
+void gc_collect();
 void init_heap();
 
 // Awkward:
@@ -66,6 +69,6 @@ void dump_new_heap();
 //extern element space[];
 //extern element* alloc;
 //extern element* tospace;
-extern element* next;
+//extern element* next;
 
 #endif // ALLOC_H

@@ -1,7 +1,13 @@
+#include "alloc.h"
 #include <iostream>
 #include <stdint.h>
 #include <string.h>
 #include <cstdlib>
+#include <set>
+
+using std::cout;
+using std::endl;
+using std::set;
 
 /*
  *
@@ -44,7 +50,6 @@
  * An element can be a header for a string.
  * An element can also be a forwarding pointer.
  */
-#include "alloc.h"
 const char* typeNames[] = {"undf","LIST", "FRWD", "STRG","NTGR"};
 
 typedef struct cons {
@@ -57,12 +62,14 @@ typedef struct strhdr {
 } strhdr;
 
 element NIL;
-element space[2048];
+static const int kSpaceSize = 1024;
+element space[2*kSpaceSize];
 element* alloc = space;
-element* tospace = space+1024;
+element* tospace = space+kSpaceSize;
 element* endspace;
 
 void ShowString(std::ostream &out, const element &str);
+void ShowList(std::ostream &out, const element &cons);
 //std::ostream& operator<<(element& elt, std::ostream& out)
 std::ostream& operator<<(std::ostream& out, const element& elt)
 {
@@ -87,19 +94,37 @@ element cdr(element cons)
 {
 	return cons.tptr[1];
 }
+void BuyRAM()
+{
+	std::cout << __FUNCTION__ << " Too many cells requested" << std::endl;
+}
+
 void NeedBump(int cells)
 {
 	if (alloc+cells > endspace)
 	{
-		std::cout << __FUNCTION__ << " cells requested " << cells <<" but GC needed" << std::endl;
-		// Fix it so that the heap is collected
-		// and alloc can provide the necessary cells.
+		if (cells < kSpaceSize)
+		{
+			std::cout << __FUNCTION__ << " cells requested " << cells <<" but GC needed" << std::endl;
+			// Fix it so that the heap is collected
+			// and alloc can provide the necessary cells.
+			gc_collect();
+		}
+		else
+		{
+			BuyRAM();
+			std::cout << __FUNCTION__ << " cells requested " << cells <<" but GC needed" << std::endl;
+			// Fix it so that the heap is collected
+			// and alloc can provide the necessary cells.
+			gc_collect();
+		}
 	}
 }
 
 element newstr()
 {
 	NeedBump(1);
+	cout << __FUNCTION__ << " NeedBump returns"<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
@@ -108,6 +133,12 @@ element newstr()
 	++alloc;
 	return r;
 }
+/*
+ * Only a few cases where this makes sense.
+ * Such as appending a character.
+ * If copying GC is in effect, NeedBump shall have been
+ * called to assure that the space is there.
+ */
 element* bigger_mem(element* ptr, int oldsize, int newsize)
 {
 	if (ptr == alloc-oldsize)
@@ -123,11 +154,29 @@ element* bigger_mem(element* ptr, int oldsize, int newsize)
 	return ret;
 }
 
+uint16_t* UCharsFromString(element str)
+{
+	element* strdata = str.tptr;
+	element* espace = strdata+1; // first element is the length;
+	return (uint16_t*)espace;
+}
+int SizeOfString(element str)
+{
+	element* strdata = str.tptr;
+	return IntFromBox(strdata[0]);	
+}
+inline int CellsForChars(int length)
+{
+	return (length+3/4);
+}
+
 element newstr(const char* asciz)
 {
 	int chars = strlen(asciz);
-	int cells = (chars+3)/4;
+	int cells = CellsForChars(chars);
+	cout << __FUNCTION__ << " asciz " << asciz << ':'<<__FILE__<<':'<<__LINE__<<endl;
 	NeedBump(cells+1);
+	cout << __FUNCTION__ << " NeedBump returns"<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
@@ -141,16 +190,19 @@ element newstr(const char* asciz)
 	return r;
 }
 
-
 element string_append_char(element str, element ch)
 {
 	element* data = str.tptr;
 	int old_len_chars = IntFromBox(data[0]);
-	int old_len_elements = (old_len_chars+3)/4; // 2 bytes per ch = 4 bytes per element.
+	int old_len_elements = CellsForChars(old_len_chars); // 2 bytes per ch = 4 bytes per element.
 	int new_len_chars = old_len_chars+1;
-	int new_len_elements = (new_len_chars+3)/4;
+	int new_len_elements = CellsForChars(new_len_chars);
 	if (new_len_elements != old_len_elements)
 	{
+		gc_add_root(&str);
+		NeedBump(new_len_elements-old_len_elements);
+		gc_unroot(&str);
+		data = str.tptr;
 		data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
 	}
 	data[0] = BoxFromInt(new_len_chars);
@@ -159,14 +211,21 @@ element string_append_char(element str, element ch)
 	str.tptr = data;
 	return str;
 }
+
 element string_append_string(element stra, element strb)
 {
-	element* adata = stra.tptr;
-	element* bdata = strb.tptr;
-	int a_len_chars = IntFromBox(adata[0]);
-	int b_len_chars = IntFromBox(bdata[0]);
+	int a_len_chars = IntFromBox(stra.tptr[0]);
+	int b_len_chars = IntFromBox(strb.tptr[0]);
 	int new_len_chars = a_len_chars+b_len_chars;
-	int new_len_elements = (new_len_chars+3)/4; // 2 bytes per ch = 4 bytes per element.
+	int new_len_elements = CellsForChars(new_len_chars); // 2 bytes per ch = 4 bytes per element.
+	gc_add_root(&stra);
+	gc_add_root(&strb);
+	NeedBump(1+new_len_elements);
+	gc_unroot(&stra);
+	gc_unroot(&strb);
+	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
+	element* adata = stra.tptr; // Don't do this before bump check
+	element* bdata = strb.tptr; // May have shifted
 	uint16_t* achars = (uint16_t*)(adata+1);
 	uint16_t* bchars = (uint16_t*)(bdata+1);
 	element* newpayload = alloc;
@@ -179,28 +238,24 @@ element string_append_string(element stra, element strb)
 	return result;
 }
 
-uint16_t* UCharsFromString(element str)
-{
-	element* strdata = str.tptr;
-	element* espace = strdata+1; // first element is the length;
-	return (uint16_t*)espace;
-}
-int SizeOfString(element str)
-{
-	element* strdata = str.tptr;
-	return IntFromBox(strdata[0]);	
-}
 element string_get_char(element str, element index)
 {
 	uint16_t* data = UCharsFromString(str);
 	int i = IntFromBox(index);
-	return BoxFromInt(data[i]);	
+	int ch = i < SizeOfString(str) ? data[i]:0;
+	return BoxFromInt(ch);	
 }
 element string_get_substr(element str, element first)
 {
-	uint16_t* data = UCharsFromString(str);
 	int srcSize = SizeOfString(str);
 	int start = IntFromBox(first);
+	cout << __FUNCTION__ << " str " << str << '['; ShowElement(cout,str); cout << "] first " << first <<':'<<__FILE__<<':'<<__LINE__<<endl;
+	gc_add_root(&str); // An example of having a root to know where it moved
+						// not just to keep it from being erased.
+	NeedBump(1+CellsForChars(srcSize-start));
+	gc_unroot(&str);
+	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
+	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
 	alloc[0] = BoxFromInt(srcSize-start);
 	uint16_t* newdata = (uint16_t*)(alloc+1);
@@ -211,14 +266,19 @@ element string_get_substr(element str, element first)
 }
 element string_get_substr(element str, element first, element count)
 {
-	uint16_t* data = UCharsFromString(str);
 	int srcSize = SizeOfString(str);
 	int start = IntFromBox(first);
+	cout << __FUNCTION__ << " str " << str << '['; ShowElement(cout,str); cout << "] first " << first << " count " << count<<':'<<__FILE__<<':'<<__LINE__<<endl;
+	gc_add_root(&str);
+	NeedBump(1+CellsForChars(IntFromBox(count)));
+	gc_unroot(&str);
+	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
+	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
 	alloc[0] = count;
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+start+IntFromBox(count), newdata);
-	alloc += 1+IntFromBox(count);
+	alloc += 1+CellsForChars(IntFromBox(count));
 	element result; result.type = BOXSTR_STRINGTYPE; result.tptr = newpayload;
 	return result;
 }
@@ -251,7 +311,7 @@ void ShowString(std::ostream& out, const element& str)
 {
 	int s = SizeOfString(str);
 	uint16_t* chs = UCharsFromString(str);
-	for (int i=0; i<s; ++i)
+	for (int i=0; i<s && i<50; ++i)
 		out << (char)chs[i];
 }
 
@@ -325,9 +385,9 @@ element* next;
 element* fromspace = space;
 element appel_forward(element p)
 {
-	if (p.tptr >= fromspace && p.tptr < fromspace+1024)
+	if (p.tptr >= fromspace && p.tptr < fromspace+kSpaceSize)
 	{
-		if (p.tptr->tptr >= tospace && p.tptr->tptr < tospace+1024)
+		if (p.tptr->tptr >= tospace && p.tptr->tptr < tospace+kSpaceSize)
 			return p.tptr[0];
 		else if (p.type == BOXSTR_LISTTYPE)
 		{
@@ -355,14 +415,73 @@ element appel_forward(element p)
 	else
 		return p;
 }
+void ShowElement(std::ostream& os, element e)
+{
+	os << e.num;  
+	if (isnan(e.num)) 
+	{ 
+		os << ' ' << std::hex << typeNames[e.type-0xFFFF0000]<< std::dec << ' '<<e.tptr; 
+	}
+}
+
+std::set<element*> roots;
+void gc_add_root(element* root)
+{
+	element di = (*root);
+	if (!BoxIsDouble(di))
+	{
+	std::cout << __FUNCTION__ << ' ';
+	ShowElement(std::cout, di); 
+	std::cout << std::endl;
+	if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
+		roots.insert(root);
+	else
+		std::cout << "Root not in from space" << std::endl;
+	}
+}
+void gc_unroot(element* root)
+{
+	element di = (*root);
+	std::cout << __FUNCTION__ << ' ';
+	ShowElement(std::cout, di); 
+	std::cout << std::endl;
+	roots.erase(root);
+}
+
+#if 0
 void appel_collect(element*& root)
+#else
+void appel_collect()
+#endif
 {
 	scan = tospace;
 	next = tospace;
-	//std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
+	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace << " scan " << scan << " next " << next << std::endl;
+#if 0
 	*root = appel_forward(*root);
 	//std::cout << __FUNCTION__ << ' ' << "root moved" << std::endl;
 	//std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
+#else
+	int kRoots = 0;
+	for (std::set<element*>::const_iterator i=roots.begin(); i!=roots.end(); ++i)
+	{
+		std::cout << *i << std::endl;
+		element di = (**i);
+		std::cout << "before "; ShowElement(std::cout, di);
+		if (!BoxIsDouble(di) && di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
+			std::cout <<' ' << di;
+		std::cout << std::endl;
+		**i = appel_forward(*(*i));
+		di = (**i);
+		std::cout << "after  "; ShowElement(std::cout, di);
+		if (!BoxIsDouble(di) && di.tptr >= tospace && di.tptr < tospace+kSpaceSize)
+			std::cout <<' ' << di;
+		std::cout << std::endl;
+		++kRoots;
+	}
+	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << std::endl;
+	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
+#endif
 	for (element* look = scan; look != next; ++look)
 		std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<*look <<"]" << std::endl;
 	while (scan < next)
@@ -402,7 +521,11 @@ void ForwardFrom(element* from, element* to)
  */
 element cons(element car, element cdr)
 {
+	gc_add_root(&car);
+	gc_add_root(&cdr);
 	NeedBump(2);
+	gc_unroot(&car);
+	gc_unroot(&cdr);
 	cons_cell& cell = *(cons_cell*)alloc;
 	cell.car = car;
 	cell.cdr = cdr;
@@ -413,11 +536,22 @@ element cons(element car, element cdr)
 	return r;
 }
 
+void gc_collect()
+{
+	appel_collect(); // alloc now refers to what's left of tospace.
+	element* s = tospace;
+	tospace = fromspace;
+	fromspace = s;	
+	endspace = fromspace + kSpaceSize;
+	std::cout << "collect completed: fromspace " << fromspace << " alloc " << alloc << " endspace " << endspace << " free cells: " << endspace - alloc << std::endl;
+	memset(tospace, 0, sizeof(element)*kSpaceSize);
+}
+
 void init_heap()
 {
 	memset(space, 0, sizeof space);
-	endspace = space+1024;
-	tospace = space+1024;
+	endspace = space+kSpaceSize;
+	tospace = space+kSpaceSize;
 	fromspace = space;
 	alloc = space;
 	NIL.type = BOXSTR_LISTTYPE; 
