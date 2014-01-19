@@ -313,14 +313,16 @@ bi builtins[] = {
 };
 void setup()
 {
-  if (table.size()==0) {
-    for (bi* b=builtins; b->name!=0; ++b) {
-      enter(newstr(b->name), b->fn);
-    }
-    enter(newstr("t"),newstr("t"));
-  }
-  s_nil = newstr("()");
-  gc_add_root(&s_nil);
+	if (table.size()==0) 
+	{
+		for (bi* b=builtins; b->name!=0; ++b) 
+		{
+			enter(newstr(b->name), b->fn);
+		}
+		enter(newstr("t"),newstr("t"));
+		s_nil = newstr("()");
+		gc_add_root(&s_nil);
+	}
 }
 element Eval(element in)
 {
@@ -396,7 +398,7 @@ element Eval(element in)
 	element actuals = basic_cdr(in);
 	gc_add_root(&actuals);
 	size_t top = table.size();
-	while (formals != newstr("()") && actuals != newstr("()")) {
+	while (formals != s_nil && actuals != s_nil) {
 		cout << __FUNCTION__ << ' ' << "formals: " << formals << " actuals " << actuals << std::endl;
 		element formal = basic_car(formals);
 		gc_add_root(&formal);
