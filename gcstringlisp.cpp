@@ -149,27 +149,27 @@ element interp_function(element s_exp) {
   return Eval(basic_car(s_exp));
 }
 element basic_cdr(element s_exp){
-	cout << __FUNCTION__ << " cdr of " << s_exp << std::endl;
 	if ('('!=IntFromBox(string_get_char(s_exp, BoxFromInt(0))))
 	{
 		std::cout << __FUNCTION__ << " sexp is " << s_exp << " which is an atom, not a list" << std::endl; 
-	    *(int*)0 = 9;
+		*(int*)0 = 9;
 	}
 	element a1=s_exp;
 	int a=Q(a1,1)+1;
-	cout << __FUNCTION__ << " car ends at " << a << std::endl;
-  if (a>1024)
-  {
-	  std::cout << __FUNCTION__ << " a is " << a << " which is too big " << std::endl; 
-	  *(int*)0 = 9;
-  }
-  while (isspace(IntFromBox(string_get_char(a1, BoxFromInt(a))))) 
-	  a++;
-  cout << __FUNCTION__ << " cdr starts at " << a << std::endl;
-  element a2=newstr("(");
-  a2 = string_append_string(a2, string_get_substr(a1, BoxFromInt(a)));//a2 += a1.substr(a);
-  cout << __FUNCTION__ << " cdr is " << a2 << std::endl;
-  return a2;
+	if (a>1024)
+	{
+		std::cout << __FUNCTION__ << " a is " << a << " which is too big " << std::endl; 
+		*(int*)0 = 9;
+	}
+	while (isspace(IntFromBox(string_get_char(a1, BoxFromInt(a))))) 
+		a++;
+	gc_add_root(&a1);
+	element a2=newstr("(");
+	gc_add_root(&a2);
+	a2 = string_append_string(a2, string_get_substr(a1, BoxFromInt(a)));//a2 += a1.substr(a);
+	gc_unroot(&a2);
+	gc_unroot(&a1);
+	return a2;
 }
 element interp_lambda(element s_exp) {
   return s_exp;
@@ -188,8 +188,24 @@ element interp_cons(element s_exp){
   //return std::string("(")+i+t.substr(1);
   return string_append_string(string_append_string(newstr("("),i),string_get_substr(t,BoxFromInt(1)));
 }
+struct Rooter {
+	Rooter(element& elt) : elt(elt) { gc_add_root(&elt); }
+	~Rooter() { gc_unroot(&elt); }
+	element& elt;
+};
+struct ExitPrint{
+	ExitPrint(const std::string& t) : t(t) {}
+	~ExitPrint() { cout << t << " on return." << endl; }
+	std::string t;
+};
 element interp_if(element s_exp){
-  return Eval(basic_car(basic_cdr((Eval(basic_car(s_exp))==s_nil)?basic_cdr(s_exp):s_exp)));
+	Rooter x(s_exp);
+	element test = basic_car(s_exp);
+	Rooter x0(test);
+	element test_result = Eval(test);
+	Rooter x1(test_result);
+	element cdr_of = test_result==s_nil?basic_cdr(s_exp):s_exp;
+	return Eval(basic_car(basic_cdr(cdr_of)));
 }
 bool not_equal(element i, element s){
 	std::ostringstream o1; o1 << i; //ShowCar(o1, i);
@@ -197,8 +213,14 @@ bool not_equal(element i, element s){
 	return o1.str()!=o2.str();
   //return isdigit(i[0])?atof(i.c_str())!=atof(s.c_str()):(i!=s);
 }
+
 element interp_equal(element s_exp){
-  return not_equal(Eval(basic_car(s_exp)),Eval(basic_car(basic_cdr(s_exp))))?s_nil:newstr("t");
+	Rooter x(s_exp);
+	element left = Eval(basic_car(s_exp));
+	Rooter x0(left);
+	element right = Eval(basic_car(basic_cdr(s_exp)));
+	Rooter x1(right);
+	return not_equal(left, right) ? s_nil:newstr("t");
 }
 element interp_less(element s_exp){
 	element left = Eval(basic_car(s_exp));
@@ -209,24 +231,33 @@ element interp_less(element s_exp){
   //return atof(Eval(C(s_exp)).c_str())<atof(Eval(C(A(s_exp))).c_str())?"t":"()";
 }
 element interp_add(element s_exp){
+	Rooter x(s_exp);
 	element left = Eval(basic_car(s_exp));
+	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
+	Rooter x1(right);
 	std::ostringstream o1; o1 << left; //ShowCar(o1, left);
 	std::ostringstream o2; o2 << right; //ShowCar(o2, right);
   std::ostringstream i;i<<(atof(o1.str().c_str())+ atof(o2.str().c_str()));
   return newstr(i.str().c_str());
 }
 element interp_sub(element s_exp){
+	Rooter x(s_exp);
 	element left = Eval(basic_car(s_exp));
+	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
+	Rooter x1(right);
 	std::ostringstream o1; o1 << left; //ShowCar(o1, left);
 	std::ostringstream o2; o2 << right; //ShowCar(o2, right);
   std::ostringstream i;i<<(atof(o1.str().c_str())- atof(o2.str().c_str()));
   return newstr(i.str().c_str());
 }
 element interp_mul(element s_exp){
+	Rooter x(s_exp);
 	element left = Eval(basic_car(s_exp));
+	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
+	Rooter x1(right);
 	std::ostringstream o1; o1 << left; //ShowCar(o1, left);
 	std::ostringstream o2; o2 << right; //ShowCar(o2, right);
   std::ostringstream i;i<<(atof(o1.str().c_str())* atof(o2.str().c_str()));
@@ -256,15 +287,28 @@ private:
   element (*fn)(element); 
   
 };
+std::ostream& operator<<(std::ostream& os, const strfn& lu)
+{
+	if (lu.func())
+		os << "<builtin>";
+	else
+		os << lu.get();
+	return os;
+}
+
 typedef std::vector<std::pair<element,strfn> > Environs;
 Environs table;
 void enter(element n, element v)
 {
   table.push_back(std::make_pair(n,strfn(v)));
+  gc_add_root(&table[table.size()-1].first);
+  table[table.size()-1].second.root();
 }
 void enter(element n, element (*f)(element))
 {
   table.push_back(std::make_pair(n,strfn(f)));
+  gc_add_root(&table[table.size()-1].first);
+  table[table.size()-1].second.root();
 }
 void RootEnvironment()
 {
@@ -279,7 +323,7 @@ strfn find(element n)
 {
   for (size_t i=table.size();i>0;--i) {
 	  element ifirst = table[i-1].first;
-	  cout << __FUNCTION__ << ' ' << ifirst << " vs " << n << " " << (ifirst==n) << endl;
+	  //cout << __FUNCTION__ << ' ' << ifirst << " vs " << n << " " << (ifirst==n) << endl;
 	  if (ifirst==n)
 		  return table[i-1].second;
     if (table[i-1].first==n)
@@ -341,21 +385,28 @@ element Eval(element in)
 	cout << __FUNCTION__ << " sizeof visible rep isn't zero? "<<os.str().size() <<':'<<__FILE__<<':'<<__LINE__ << endl;
 	if (isdigit(IntFromBox(string_get_char(in, BoxFromInt(0)))))
 	{
+		cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
 		return in;
 	}
 	if(in==s_nil)
 		return in;
 #if 1
 	if (IntFromBox(string_get_char(in,BoxFromInt(0)))!='(') {
-		cout << "Calling find " << __LINE__ << " with " << in << endl;
+		cout << __FUNCTION__ << " Calling find with "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
 		strfn x = find(in);
-		cout << "Lookup "<<in<<" result: " << x.get();
+		cout << "Lookup "<<in<<" result: ";
 		if (x.func())
 			cout << "a built-in called " << in;
+		else
+			cout		<< x.get();
 		cout << endl;
 		if (IntFromBox(string_get_size(x.get()))!=0)
+		{
+			cout << __FUNCTION__ << " returning "<< x.get() <<':'<<__FILE__<<':'<<__LINE__ << endl;
 			return x.get();
+		}
 		if (x.func()) {
+			cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
 			return in;
 		}
 	}
@@ -364,6 +415,7 @@ element Eval(element in)
 	//std::cout << "car: " << basic_car(in) << std::endl;
 	//std::cout << "cdr: " << basic_cdr(in) << std::endl;
 	
+	gc_add_root(&in);
 	element op = basic_car(in);
 	gc_add_root(&op);
 	
@@ -373,20 +425,25 @@ element Eval(element in)
 		op=Eval(op);
 	}
 	std::cout << "line "<< __LINE__ << " after refinement |"<< op <<'|'<< std::endl;
-	//if (isdigit(IntFromBox(string_get_char(op, BoxFromInt(0)))))
-	//  return op;
 	
 	cout << "Calling find " << __LINE__ << endl;
 	strfn x = find(op);
-	cout << "Lookup result: " << x.get();
+	std::ostringstream ck; ck << x.get(); if (ck.str().size()==0 && !x.func()) {
+		for (int i=0; i<table.size(); ++i)
+		{
+			cout << __FUNCTION__ << " table["<<i<<"] "<< table[i].first << '|';ShowElement(cout,table[i].first); cout<<'|' << '@'<<&table[i].first<<':'<<__FILE__<<':'<<__LINE__ << endl;
+		}
+	}
+	cout << "Lookup result: "; if (!x.func()) cout << x.get();
 	if (x.func())
 		cout << "a built-in called " << op;
-	gc_unroot(&op);
 	cout << endl;
+	gc_unroot(&op);
 	if (x.func())
 	{
 		x.root();
 		element r = x.exec(basic_cdr(in));
+		gc_unroot(&in);
 		x.unroot();
 		return r;
 	}
@@ -395,6 +452,7 @@ element Eval(element in)
 	gc_add_root(&lambda); std::cout << "Rooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
 	element formals = basic_car(lambda);
 	gc_add_root(&formals);
+	cout << __FUNCTION__ << ' ' << "getting actuals from cdr of " << in << std::endl;
 	element actuals = basic_cdr(in);
 	gc_add_root(&actuals);
 	size_t top = table.size();
@@ -408,7 +466,6 @@ element Eval(element in)
 		element actual = Eval(actual_expr);
 		gc_unroot(&actual_expr);
 		cout << __FUNCTION__ << ' ' << "formal: " << formal << " actual " << actual << endl;
-		gc_add_root(&actual); // this rooting isn't going to be effective. They need to be rooted to the environment itself.
 		enter(formal, actual);
 		formals = basic_cdr(formals);
 		actuals = basic_cdr(actuals);
@@ -422,6 +479,7 @@ element Eval(element in)
 	//}
 	
 	gc_add_root(&body);
+	RootEnvironment();
 	element rv = Eval(body);
 	gc_unroot(&body);
 	gc_unroot(&lambda); std::cout << "Unrooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
