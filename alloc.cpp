@@ -1,5 +1,6 @@
 #include "alloc.h"
 #include <iostream>
+#include <iomanip>
 #include <stdint.h>
 #include <string.h>
 #include <cstdlib>
@@ -124,7 +125,6 @@ void NeedBump(int cells)
 element newstr()
 {
 	NeedBump(1);
-	cout << __FUNCTION__ << " NeedBump returns"<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
@@ -167,16 +167,14 @@ int SizeOfString(element str)
 }
 inline int CellsForChars(int length)
 {
-	return (length+3/4);
+	return (length+3)/4;
 }
 
 element newstr(const char* asciz)
 {
 	int chars = strlen(asciz);
 	int cells = CellsForChars(chars);
-	cout << __FUNCTION__ << " asciz " << asciz << ':'<<__FILE__<<':'<<__LINE__<<endl;
 	NeedBump(cells+1);
-	cout << __FUNCTION__ << " NeedBump returns"<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
@@ -223,7 +221,6 @@ element string_append_string(element stra, element strb)
 	NeedBump(1+new_len_elements);
 	gc_unroot(&stra);
 	gc_unroot(&strb);
-	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	element* adata = stra.tptr; // Don't do this before bump check
 	element* bdata = strb.tptr; // May have shifted
 	uint16_t* achars = (uint16_t*)(adata+1);
@@ -249,12 +246,10 @@ element string_get_substr(element str, element first)
 {
 	int srcSize = SizeOfString(str);
 	int start = IntFromBox(first);
-	cout << __FUNCTION__ << " str " << str << '['; ShowElement(cout,str); cout << "] first " << first <<':'<<__FILE__<<':'<<__LINE__<<endl;
 	gc_add_root(&str); // An example of having a root to know where it moved
 						// not just to keep it from being erased.
 	NeedBump(1+CellsForChars(srcSize-start));
 	gc_unroot(&str);
-	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
 	alloc[0] = BoxFromInt(srcSize-start);
@@ -268,11 +263,9 @@ element string_get_substr(element str, element first, element count)
 {
 	int srcSize = SizeOfString(str);
 	int start = IntFromBox(first);
-	cout << __FUNCTION__ << " str " << str << '['; ShowElement(cout,str); cout << "] first " << first << " count " << count<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	gc_add_root(&str);
 	NeedBump(1+CellsForChars(IntFromBox(count)));
 	gc_unroot(&str);
-	cout << __FUNCTION__ << " NeedBump returns "<<alloc<<':'<<__FILE__<<':'<<__LINE__<<endl;
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
 	alloc[0] = count;
@@ -430,64 +423,62 @@ void gc_add_root(element* root)
 	element di = (*root);
 	if (!BoxIsDouble(di))
 	{
-	std::cout << __FUNCTION__ << ' ';
-	ShowElement(std::cout, di); 
-	std::cout << std::endl;
-	if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
-		roots.insert(root);
-	else
-		std::cout << "Root not in from space" << std::endl;
+		if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
+			roots.insert(root);
+		else
+			std::cout << "Root not in from space" << std::endl;
 	}
 }
 void gc_unroot(element* root)
 {
-	element di = (*root);
-	std::cout << __FUNCTION__ << ' ';
-	ShowElement(std::cout, di); 
-	std::cout << std::endl;
 	roots.erase(root);
 }
 
-#if 0
-void appel_collect(element*& root)
-#else
 void appel_collect()
-#endif
 {
 	scan = tospace;
 	next = tospace;
-	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace << " scan " << scan << " next " << next << std::endl;
-#if 0
-	*root = appel_forward(*root);
-	//std::cout << __FUNCTION__ << ' ' << "root moved" << std::endl;
-	//std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
-#else
+	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace<<'-'<<fromspace+kSpaceSize-1 << " scan " << scan << " next " << next << std::endl;
 	int kRoots = 0;
 	for (std::set<element*>::const_iterator i=roots.begin(); i!=roots.end(); ++i)
 	{
-		std::cout << *i << std::endl;
-		element di = (**i);
-		std::cout << "before "; ShowElement(std::cout, di);
-		if (!BoxIsDouble(di) && di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
-			std::cout <<' ' << di;
-		std::cout << std::endl;
-		**i = appel_forward(*(*i));
-		di = (**i);
-		std::cout << "after  "; ShowElement(std::cout, di);
-		if (!BoxIsDouble(di) && di.tptr >= tospace && di.tptr < tospace+kSpaceSize)
-			std::cout <<' ' << di;
-		std::cout << std::endl;
+		if (!BoxIsDouble(**i))
+		{
+#if 0
+			std::cout << *i;// << std::endl;
+			element di = (**i);
+			std::cout << " before "; ShowElement(std::cout, di);
+#endif
+			**i = appel_forward(*(*i));
+#if 0
+			di = (**i);
+			std::cout << " after "; ShowElement(std::cout, di);
+			std::cout << std::endl;
+#endif
+		}
 		++kRoots;
 	}
 	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << std::endl;
 	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
-#endif
+#if 0
 	for (element* look = scan; look != next; ++look)
-		std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<*look <<"]" << std::endl;
+	{
+		if (BoxIsInteger(*look))
+		{
+			cout << __FUNCTION__ << ' ' << "item@" << look << ": str length " << *look << '('<< CellsForChars(IntFromBox(*look)) << ')' << endl;
+			for (int i=0; i<CellsForChars(IntFromBox(*look)); ++i)
+			{
+				cout << __FUNCTION__ << ' ' << "item@" << look+i+1 << ": "<< std::setw(2) << std::setfill('0') << std::hex << look[i+1].ch[0]<< look[i+1].ch[1]<< look[i+1].ch[2]<< look[i+1].ch[3]  << endl;
+				cout << std::setw(0) << std::dec;
+			}
+			look += CellsForChars(IntFromBox(*look));
+		}
+		else
+			std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<*look <<"]" << std::endl;
+	}
+#endif
 	while (scan < next)
 	{
-		//for (int t=0; t<30 && tospace+t!=next; ++t)
-		//	std::cout << __FUNCTION__ << ' ' << "cell " << t << ' ' << tospace+t << ':'<< tospace[t] << std::endl;
 		element oldscan = scan[0];
 		*scan = appel_forward(*scan);
 		if (oldscan.type == BOXSTR_LISTTYPE)
@@ -496,12 +487,10 @@ void appel_collect()
 			++ scan;
 		else if (oldscan.type == BOXSTR_INTTYPE)
 		{
-			std::cout << __FUNCTION__ << ' ' << "string moved" << std::endl;
-			scan += 1 + (IntFromBox(oldscan)+3)/4;
+			scan += 1 + CellsForChars(IntFromBox(oldscan));
 		}
 		else 
 			++ scan;
-		//std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
 	}
 	alloc = next;	
 }
