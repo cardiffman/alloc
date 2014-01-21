@@ -71,6 +71,7 @@ element* endspace;
 
 void ShowString(std::ostream &out, const element &str);
 void ShowList(std::ostream &out, const element &cons);
+void ShowArray(std::ostream &out, const element &array);
 //std::ostream& operator<<(element& elt, std::ostream& out)
 std::ostream& operator<<(std::ostream& out, const element& elt)
 {
@@ -78,6 +79,8 @@ std::ostream& operator<<(std::ostream& out, const element& elt)
 		out << elt.num;// << '<' << std::hex << elt.type << elt.tptr << std::dec << '>';
 	else if (BoxIsString(elt))
 		ShowString(out, elt);
+	else if (BoxIsArray(elt))
+		ShowArray(out, elt);
 	else if (BoxIsList(elt))
 		ShowList(out, elt);
 	else if (BoxIsInteger(elt))
@@ -128,7 +131,7 @@ element newstr()
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
-	alloc->type = BOXSTR_INTTYPE;
+	alloc->type = BOXSTR_STRHDR;
 	alloc->tptr = (element*)0;
 	++alloc;
 	return r;
@@ -178,7 +181,7 @@ element newstr(const char* asciz)
 	element r;
 	r.type = BOXSTR_STRINGTYPE;
 	r.tptr = alloc;
-	alloc[0] = BoxFromInt(chars);
+	alloc[0] = ElementFromInt(BOXSTR_STRHDR, chars);
 	uint16_t* pchars = (uint16_t*)(alloc+1);
 	for (int i=0; i<chars; ++i)
 	{
@@ -203,7 +206,7 @@ element string_append_char(element str, element ch)
 		data = str.tptr;
 		data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
 	}
-	data[0] = BoxFromInt(new_len_chars);
+	data[0] = ElementFromInt(BOXSTR_STRHDR, new_len_chars);
 	uint16_t* str_ptr = (uint16_t*)(data+1);
 	str_ptr[old_len_chars] = (uint16_t)IntFromBox(ch);
 	str.tptr = data;
@@ -226,7 +229,7 @@ element string_append_string(element stra, element strb)
 	uint16_t* achars = (uint16_t*)(adata+1);
 	uint16_t* bchars = (uint16_t*)(bdata+1);
 	element* newpayload = alloc;
-	alloc[0] = BoxFromInt(new_len_chars);
+	alloc[0] = ElementFromInt(BOXSTR_STRHDR, new_len_chars);
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(achars, achars+a_len_chars, newdata);
 	std::copy(bchars, bchars+b_len_chars, newdata+a_len_chars);
@@ -252,7 +255,7 @@ element string_get_substr(element str, element first)
 	gc_unroot(&str);
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
-	alloc[0] = BoxFromInt(srcSize-start);
+	alloc[0] = ElementFromInt(BOXSTR_STRHDR, srcSize-start);
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+srcSize, newdata);
 	alloc += 1+srcSize-start;
@@ -279,6 +282,101 @@ element string_get_size(element str)
 {
 	return BoxFromInt(SizeOfString(str));
 }
+element array_create()
+{
+	NeedBump(1);
+	element r;
+	r.type = BOXSTR_ARRAY;
+	r.tptr = alloc;
+	alloc[0] = ElementFromInt(BOXSTR_ARRHDR, 0);
+	++alloc;
+	return r;
+}
+element array_create(element len)
+{
+	NeedBump(IntFromBox(len)+1);
+	element r;
+	r.type = BOXSTR_ARRAY;
+	r.tptr = alloc;
+	alloc[0] = ElementFromInt(BOXSTR_ARRHDR, IntFromBox(len));
+	alloc += IntFromBox(len)+1;
+	return r;
+}
+
+element array_append_element(element array, element elt)
+{
+	element* data = array.tptr;
+	int old_len_elements = IntFromBox(data[0]);
+	int new_len_elements = old_len_elements+1;
+	gc_add_root(&array);
+	gc_add_root(&elt);
+	NeedBump(1);
+	gc_unroot(&array);
+	gc_unroot(&elt);
+	data = array.tptr;
+	data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
+	data[0] = ElementFromInt(BOXSTR_ARRHDR, new_len_elements);
+	element* arr_ptr = data+1;
+	arr_ptr[old_len_elements] = elt;
+	array.tptr = data;
+	return array;
+}
+
+element array_get_element(element array, element index)
+{
+	element* data = array.tptr;
+	int i = IntFromBox(index);
+	element r = (i < IntFromBox(data[0])) ? data[i+1]:NIL;
+	return r;
+}
+element array_set_element(element array, element index, element elt)
+{
+	element* data = array.tptr;
+	int i = IntFromBox(index);
+	int size = IntFromBox(data[0]);
+	if (i < size)
+	{
+		data[i+1] = elt;
+	}
+	else
+	{
+		// Out of bounds and we wish to allow it.
+		gc_add_root(&array);
+		// not the kind of element that moves: gc_add_root(&index);
+		gc_add_root(&elt);
+		NeedBump(i+1-size);
+		gc_unroot(&array);
+		gc_unroot(&elt);
+		data = array.tptr;
+		data = bigger_mem(data, size+1, i+1);
+		data[i+1] = elt;
+	}
+	return array;
+}
+element array_get_size(element array)
+{
+	return BoxFromInt(IntFromBox(array.tptr[0]));
+}
+
+element array_set_size(element array, element size)
+{
+	element* data = array.tptr;
+	int current_size = IntFromBox(data[0]);
+	int new_size = IntFromBox(size);
+	if (new_size <= current_size)
+	{
+		data[0] = ElementFromInt(BOXSTR_ARRHDR, new_size);
+	}
+	else
+	{
+		gc_add_root(&array);
+		NeedBump(new_size-current_size);
+		gc_unroot(&array);
+		data = array.tptr;
+		data = bigger_mem(data, current_size+1, new_size+1);
+	}
+	return array;
+}
 
 bool equal_data(const element& a, const element& b)
 {
@@ -296,6 +394,17 @@ bool equal_data(const element& a, const element& b)
 		if (SizeOfString(a)==SizeOfString(b))
 			return memcmp(UCharsFromString(a), UCharsFromString(b), 2*SizeOfString(a))==0;
 		return false;
+	case BOXSTR_ARRAY:
+		if (IntFromBox(a.tptr[0])==IntFromBox(b.tptr[0]))
+		{
+			for (int i=0; i<IntFromBox(a.tptr[0]); ++i)
+			{
+				if (!equal_data(a.tptr[i+1], b.tptr[i+1]))
+					return false;
+			}
+			return true;
+		}
+		return false;
 	}
 	return false;
 }
@@ -308,6 +417,16 @@ void ShowString(std::ostream& out, const element& str)
 		out << (char)chs[i];
 }
 
+void ShowArray(std::ostream& out, const element& array)
+{
+	int s = IntFromBox(array.tptr[0]);
+	element* elts = array.tptr+1;
+	for (int i=0; i<s && i<50; ++i)
+		out << elts[i];
+}
+
+#if 0
+// On its way out
 void ShowCar(std::ostream& out, const element& car)
 {
 	switch (car.type)
@@ -326,6 +445,7 @@ void ShowCar(std::ostream& out, const element& car)
 		break;
 	}
 }
+#endif
 
 void InnerShowList(std::ostream& out, const element &cons)
 {
@@ -396,11 +516,22 @@ element appel_forward(element p)
 		{
 			next[0] = p.tptr[0];
 			int chars = IntFromBox(next[0]);
-			int cells = (chars+3)/4;
+			int cells = CellsForChars(chars);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
 			p.tptr[0].tptr = next;
 			p.tptr[0].type = BOXSTR_STRINGTYPE;
+			next += 1 + cells;
+			return p.tptr[0];
+		}
+		else if (p.type == BOXSTR_ARRAY)
+		{
+			next[0] = p.tptr[0];
+			int cells = IntFromBox(next[0]);
+			if (cells != 0)
+				memcpy(next+1, p.tptr+1, cells*sizeof(element));
+			p.tptr[0].tptr = next;
+			p.tptr[0].type = BOXSTR_ARRAY;
 			next += 1 + cells;
 			return p.tptr[0];
 		}
@@ -485,9 +616,13 @@ void appel_collect()
 			++ scan;
 		else if (oldscan.type == BOXSTR_STRINGTYPE)
 			++ scan;
-		else if (oldscan.type == BOXSTR_INTTYPE)
+		else if (oldscan.type == BOXSTR_STRHDR)
 		{
 			scan += 1 + CellsForChars(IntFromBox(oldscan));
+		}
+		else if (oldscan.type == BOXSTR_ARRHDR)
+		{
+			scan += 1 + IntFromBox(oldscan);
 		}
 		else 
 			++ scan;
