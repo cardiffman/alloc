@@ -264,7 +264,7 @@ element interp_mul(element s_exp){
   return newstr(i.str().c_str());
 }
 
-#define STL_ENVIRONMENT
+#undef STL_ENVIRONMENT
 #ifdef STL_ENVIRONMENT
 
 class strfn {
@@ -335,15 +335,15 @@ strfn find(element n)
   return strfn();
 }
 #else
-element table = array_create();
+element table;
 bool builtins_loaded = false;
 void enter(element n, element v)
 {
-	array_append_element(table, cons(n, v));
+	table = array_append_element(table, cons(n, v));
 }
 void enter(element n, element (*f)(element))
 {
-	array_append_element(table, cons(n, BoxFromBuiltIn(f)));
+	table = array_append_element(table, cons(n, BoxFromBuiltIn(f)));
 }
 void RootEnvironment()
 {
@@ -391,6 +391,7 @@ void setup()
 	if (!builtins_loaded) 
 	{
 		builtins_loaded = true;
+		table = array_create();
 		for (bi* b=builtins; b->name!=0; ++b) 
 		{
 			enter(newstr(b->name), b->fn);
@@ -448,15 +449,20 @@ element Eval(element in)
 #else
 		element x = find(in);
 		cout << "Lookup "<<in<<" result: ";
-		if (BoxIsBuiltin(cdr(x)))
+		if (BoxIsBuiltin(x))
 			cout << "a built-in called " << in;
 		else
-			cout		<< cdr(x);
+			cout		<< x;
 		cout << endl;
-		if (IntFromBox(string_get_size(cdr(x)))!=0)
+		if (!BoxIsBuiltin(x))
 		{
-			cout << __FUNCTION__ << " returning "<< cdr(x) <<':'<<__FILE__<<':'<<__LINE__ << endl;
-			return cdr(x);
+			cout << __FUNCTION__ << " returning "<< x <<':'<<__FILE__<<':'<<__LINE__ << endl;
+			return x;
+		}
+		if (BoxIsBuiltin(x))
+		{
+			cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
+			return in;
 		}
 #endif //  STL_ENVIRONMENT
 	}
@@ -501,8 +507,8 @@ element Eval(element in)
 			cout << __FUNCTION__ << " table["<<i<<"] "<< name << '|';ShowElement(cout,name); cout<<'|' << ':'<<__FILE__<<':'<<__LINE__ << endl;
 		}
 	}
-	cout << "Lookup result: "; if (!BoxIsBuiltin(cdr(x))) cout << cdr(x);
-	if (BoxIsBuiltin(cdr(x)))
+	cout << "Lookup result: "; if (!BoxIsBuiltin(x)) cout << x;
+	if (BoxIsBuiltin(x))
 		cout << "a built-in called " << op;
 	cout << endl;
 #endif
@@ -517,10 +523,10 @@ element Eval(element in)
 		return r;
 	}
 #else
-	if (BoxIsBuiltin(cdr(x)))
+	if (BoxIsBuiltin(x))
 	{
 		gc_add_root(&x);
-		Builtin f = BuiltinFromBox(cdr(x));
+		Builtin f = BuiltinFromBox(x);
 		element r = f(basic_cdr(in));
 		gc_unroot(&x);
 		return r;
@@ -530,7 +536,7 @@ element Eval(element in)
 #ifdef STL_ENVIRONMENT
 	element lambda = x.get();
 #else
-	element lambda = cdr(x);
+	element lambda = x;
 #endif
 	gc_add_root(&lambda); std::cout << "Rooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
 	element formals = basic_car(lambda);
@@ -580,7 +586,7 @@ element Eval(element in)
 		table.pop_back();
 	}	
 #else
-	array_set_size(table, top);
+	table = array_set_size(table, top);
 #endif
 	return rv;
 }
@@ -588,6 +594,8 @@ element Eval(element in)
 int main(int, char**)
 {
 	init_heap();
+	setup();// setup the environment.
+	RootEnvironment();
 	
 	element in = newstr();
 	element* pin = &in;
@@ -606,7 +614,6 @@ int main(int, char**)
 			element nin = string_append_char(in, BoxFromInt(ch));
 			in = nin;
 		}
-		RootEnvironment();
 		cout << Eval(in) << endl;
 		in=newstr();
 	}

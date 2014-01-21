@@ -51,7 +51,7 @@ using std::set;
  * An element can be a header for a string.
  * An element can also be a forwarding pointer.
  */
-const char* typeNames[] = {"undf","LIST", "FRWD", "STRG","NTGR"};
+const char* typeNames[] = {"undf","LIST", "FRWD", "STRG","SHDR","ARRY","AHDR","BLTN","NTGR"};
 
 typedef struct cons {
 	element car;
@@ -271,7 +271,7 @@ element string_get_substr(element str, element first, element count)
 	gc_unroot(&str);
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
-	alloc[0] = count;
+	alloc[0] = ElementFromInt(BOXSTR_STRHDR, IntFromBox(count));
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+start+IntFromBox(count), newdata);
 	alloc += 1+CellsForChars(IntFromBox(count));
@@ -374,6 +374,7 @@ element array_set_size(element array, element size)
 		gc_unroot(&array);
 		data = array.tptr;
 		data = bigger_mem(data, current_size+1, new_size+1);
+		data[0] = ElementFromInt(BOXSTR_ARRHDR, new_size);
 	}
 	return array;
 }
@@ -493,9 +494,36 @@ WHILE scan < next
 	scan := scan+1
 
 */
+void ShowElement(std::ostream& os, element e)
+{
+	os << e.num;  
+	if (isnan(e.num)) 
+	{ 
+		os << ' ' << std::hex << typeNames[e.type-0xFFFF0000]<< std::dec << ' '<<e.tptr; 
+	}
+}
+
+std::set<element*> roots;
+
 element* scan;
 element* next;
 element* fromspace = space;
+void gc_add_root(element* root)
+{
+	element di = (*root);
+	if (!BoxIsDouble(di) && !BoxIsBuiltin(di) && !BoxIsInteger(di))
+	{
+		if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
+			roots.insert(root);
+		else
+			std::cout << "Root not in from space" << std::endl;
+	}
+}
+void gc_unroot(element* root)
+{
+	roots.erase(root);
+}
+
 element appel_forward(element p)
 {
 	if (p.tptr >= fromspace && p.tptr < fromspace+kSpaceSize)
@@ -539,32 +567,6 @@ element appel_forward(element p)
 	else
 		return p;
 }
-void ShowElement(std::ostream& os, element e)
-{
-	os << e.num;  
-	if (isnan(e.num)) 
-	{ 
-		os << ' ' << std::hex << typeNames[e.type-0xFFFF0000]<< std::dec << ' '<<e.tptr; 
-	}
-}
-
-std::set<element*> roots;
-void gc_add_root(element* root)
-{
-	element di = (*root);
-	if (!BoxIsDouble(di))
-	{
-		if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
-			roots.insert(root);
-		else
-			std::cout << "Root not in from space" << std::endl;
-	}
-}
-void gc_unroot(element* root)
-{
-	roots.erase(root);
-}
-
 void appel_collect()
 {
 	scan = tospace;
@@ -575,13 +577,13 @@ void appel_collect()
 	{
 		if (!BoxIsDouble(**i))
 		{
-#if 0
+#if 1
 			std::cout << *i;// << std::endl;
 			element di = (**i);
 			std::cout << " before "; ShowElement(std::cout, di);
 #endif
 			**i = appel_forward(*(*i));
-#if 0
+#if 1
 			di = (**i);
 			std::cout << " after "; ShowElement(std::cout, di);
 			std::cout << std::endl;
@@ -591,10 +593,10 @@ void appel_collect()
 	}
 	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << std::endl;
 	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
-#if 0
+#if 1
 	for (element* look = scan; look != next; ++look)
 	{
-		if (BoxIsInteger(*look))
+		/*if (look->tptr[0].type == BOXSTR_STRHDR)
 		{
 			cout << __FUNCTION__ << ' ' << "item@" << look << ": str length " << *look << '('<< CellsForChars(IntFromBox(*look)) << ')' << endl;
 			for (int i=0; i<CellsForChars(IntFromBox(*look)); ++i)
@@ -604,7 +606,7 @@ void appel_collect()
 			}
 			look += CellsForChars(IntFromBox(*look));
 		}
-		else
+		else*/
 			std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<*look <<"]" << std::endl;
 	}
 #endif
@@ -620,10 +622,10 @@ void appel_collect()
 		{
 			scan += 1 + CellsForChars(IntFromBox(oldscan));
 		}
-		else if (oldscan.type == BOXSTR_ARRHDR)
+		/*else if (oldscan.type == BOXSTR_ARRHDR)
 		{
 			scan += 1 + IntFromBox(oldscan);
-		}
+		} Don't skip the guts of an array, the elements are boxed */
 		else 
 			++ scan;
 	}
