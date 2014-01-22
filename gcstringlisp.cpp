@@ -264,77 +264,6 @@ element interp_mul(element s_exp){
   return newstr(i.str().c_str());
 }
 
-#undef STL_ENVIRONMENT
-#ifdef STL_ENVIRONMENT
-
-class strfn {
-public:
-  element get() const { return str; }
-  element exec(element ex) { return (*fn)(ex); }
-  strfn(element s) { str=s; fn=0; }
-  strfn(element (*f)(element)) { fn=f; str=newstr(); }
-  strfn() { fn=0; str=newstr(); }
-  strfn(const strfn& o) : str(o.str), fn(o.fn) {}
-  strfn& operator=(const strfn& o)
-  {
-	  str = o.str;
-	  fn = o.fn;
-	  return *this;
-  }
-
-  bool func() const { return fn!=0; }
-  void root() { if (!func()) gc_add_root(&str); }
-  void unroot() { if (!func()) gc_unroot(&str); }
-private: 
-  element str; 
-  element (*fn)(element); 
-  
-};
-std::ostream& operator<<(std::ostream& os, const strfn& lu)
-{
-	if (lu.func())
-		os << "<builtin>";
-	else
-		os << lu.get();
-	return os;
-}
-
-typedef std::vector<std::pair<element,strfn> > Environs;
-Environs table;
-bool builtins_loaded = false;
-void enter(element n, element v)
-{
-  table.push_back(std::make_pair(n,strfn(v)));
-  gc_add_root(&table[table.size()-1].first);
-  table[table.size()-1].second.root();
-}
-void enter(element n, element (*f)(element))
-{
-  table.push_back(std::make_pair(n,strfn(f)));
-  gc_add_root(&table[table.size()-1].first);
-  table[table.size()-1].second.root();
-}
-void RootEnvironment()
-{
-	for (Environs::iterator i=table.begin(); i!=table.end(); ++i)
-	{
-		gc_add_root(&i->first);
-		i->second.root();
-	}
-}
-strfn find(element n)
-{
-  for (size_t i=table.size();i>0;--i) {
-	  element ifirst = table[i-1].first;
-	  //cout << __FUNCTION__ << ' ' << ifirst << " vs " << n << " " << (ifirst==n) << endl;
-	  if (ifirst==n)
-		  return table[i-1].second;
-    if (table[i-1].first==n)
-      return table[i-1].second;
-  }
-  return strfn();
-}
-#else
 element table;
 bool builtins_loaded = false;
 void enter(element n, element v)
@@ -360,7 +289,6 @@ element find(element n)
 	}
 	return s_nil;
 }
-#endif
 
 element interp_defun(element s_exp){
   element e=basic_cdr(s_exp);
@@ -399,9 +327,7 @@ void setup()
 		enter(newstr("t"),newstr("t"));
 		s_nil = newstr("()");
 		gc_add_root(&s_nil);
-#if !defined(STL_ENVIRONMENT)
 		gc_add_root(&table);
-#endif
 	}
 }
 element Eval(element in)
@@ -429,24 +355,6 @@ element Eval(element in)
 #if 1
 	if (IntFromBox(string_get_char(in,BoxFromInt(0)))!='(') {
 		cout << __FUNCTION__ << " Calling find with "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
-#ifdef STL_ENVIRONMENT
-		strfn x = find(in);
-		cout << "Lookup "<<in<<" result: ";
-		if (x.func())
-			cout << "a built-in called " << in;
-		else
-			cout		<< x.get();
-		cout << endl;
-		if (IntFromBox(string_get_size(x.get()))!=0)
-		{
-			cout << __FUNCTION__ << " returning "<< x.get() <<':'<<__FILE__<<':'<<__LINE__ << endl;
-			return x.get();
-		}
-		if (x.func()) {
-			cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
-			return in;
-		}
-#else
 		element x = find(in);
 		cout << "Lookup "<<in<<" result: ";
 		if (BoxIsBuiltin(x))
@@ -464,7 +372,6 @@ element Eval(element in)
 			cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
 			return in;
 		}
-#endif //  STL_ENVIRONMENT
 	}
 #endif
 	//std::cout << "starts with paren " << in << std::endl;
@@ -483,19 +390,6 @@ element Eval(element in)
 	std::cout << "line "<< __LINE__ << " after refinement |"<< op <<'|'<< std::endl;
 	
 	cout << "Calling find " << __LINE__ << endl;
-#ifdef STL_ENVIRONMENT
-	strfn x = find(op);
-	std::ostringstream ck; ck << x.get(); if (ck.str().size()==0 && !x.func()) {
-		for (int i=0; i<table.size(); ++i)
-		{
-			cout << __FUNCTION__ << " table["<<i<<"] "<< table[i].first << '|';ShowElement(cout,table[i].first); cout<<'|' << '@'<<&table[i].first<<':'<<__FILE__<<':'<<__LINE__ << endl;
-		}
-	}
-	cout << "Lookup result: "; if (!x.func()) cout << x.get();
-	if (x.func())
-		cout << "a built-in called " << op;
-	cout << endl;
-#else
 	element x = find(op);
 	std::ostringstream ck; ck << x; if (ck.str().size()==0) {
 		for (int i=0; i<IntFromBox(array_get_size(table)); ++i)
@@ -511,18 +405,7 @@ element Eval(element in)
 	if (BoxIsBuiltin(x))
 		cout << "a built-in called " << op;
 	cout << endl;
-#endif
 	gc_unroot(&op);
-#ifdef STL_ENVIRONMENT
-	if (x.func())
-	{
-		x.root();
-		element r = x.exec(basic_cdr(in));
-		gc_unroot(&in);
-		x.unroot();
-		return r;
-	}
-#else
 	if (BoxIsBuiltin(x))
 	{
 		gc_add_root(&x);
@@ -531,24 +414,15 @@ element Eval(element in)
 		gc_unroot(&x);
 		return r;
 	}
-#endif // STL_ENVIRONMENT
 	
-#ifdef STL_ENVIRONMENT
-	element lambda = x.get();
-#else
 	element lambda = x;
-#endif
 	gc_add_root(&lambda); std::cout << "Rooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
 	element formals = basic_car(lambda);
 	gc_add_root(&formals);
 	cout << __FUNCTION__ << ' ' << "getting actuals from cdr of " << in << std::endl;
 	element actuals = basic_cdr(in);
 	gc_add_root(&actuals);
-#ifdef STL_ENVIRONMENT
-	size_t top = table.size();
-#else
 	element top = array_get_size(table);
-#endif
 	while (formals != s_nil && actuals != s_nil) {
 		cout << __FUNCTION__ << ' ' << "formals: " << formals << " actuals " << actuals << std::endl;
 		element formal = basic_car(formals);
@@ -578,16 +452,7 @@ element Eval(element in)
 	gc_unroot(&lambda); std::cout << "Unrooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
 	
 
-#ifdef STL_ENVIRONMENT	
-	while (table.size()>top)
-	{
-		gc_unroot(&table[table.size()-1].first);
-		table[table.size()-1].second.unroot();
-		table.pop_back();
-	}	
-#else
 	table = array_set_size(table, top);
-#endif
 	return rv;
 }
 
