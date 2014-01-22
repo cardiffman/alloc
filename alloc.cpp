@@ -366,6 +366,8 @@ element array_set_size(element array, element size)
 	if (new_size <= current_size)
 	{
 		data[0] = ElementFromInt(BOXSTR_ARRHDR, new_size);
+		// Downsizing seems to be slightly off.
+		cout << __FUNCTION__ << ' ' << "old:" << current_size << " new:" << new_size << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	}
 	else
 	{
@@ -460,9 +462,18 @@ void InnerShowList(std::ostream& out, const element &cons)
 	while (ecdr != NIL)
 	{
 		out << ' ';
-		ecar = car(ecdr);
-		out << ecar;
-		ecdr = cdr(ecdr);
+		if (BoxIsList(ecdr))
+		{
+			ecar = car(ecdr);
+			out << ecar;
+			ecdr = cdr(ecdr);
+		}
+		else
+		{
+			out << ". ";
+			out << ecdr;
+			break;
+		}
 	}
 	out << ')';
 	return;
@@ -534,11 +545,11 @@ element appel_forward(element p)
 		{
 			next[0] = p.tptr[0];
 			next[1] = p.tptr[1];
-			p.tptr[0].tptr = next;
-			//p.tptr[0].type = BOXSTR_FORWARDTYPE;
-			p.tptr[0].type = BOXSTR_LISTTYPE;
+			element r;
+			r.tptr = next;
+			r.type = BOXSTR_LISTTYPE;
 			next += 2;
-			return p.tptr[0];
+			return r;
 		}
 		else if (p.type == BOXSTR_STRINGTYPE)
 		{
@@ -547,10 +558,11 @@ element appel_forward(element p)
 			int cells = CellsForChars(chars);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
-			p.tptr[0].tptr = next;
-			p.tptr[0].type = BOXSTR_STRINGTYPE;
+			element r;
+			r.tptr = next;
+			r.type = BOXSTR_STRINGTYPE;
 			next += 1 + cells;
-			return p.tptr[0];
+			return r;
 		}
 		else if (p.type == BOXSTR_ARRAY)
 		{
@@ -558,10 +570,11 @@ element appel_forward(element p)
 			int cells = IntFromBox(next[0]);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
-			p.tptr[0].tptr = next;
-			p.tptr[0].type = BOXSTR_ARRAY;
+			element r;
+			r.tptr = next;
+			r.type = BOXSTR_ARRAY;
 			next += 1 + cells;
-			return p.tptr[0];
+			return r;
 		}
 	}
 	else
