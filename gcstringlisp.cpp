@@ -51,6 +51,7 @@
 #include <vector>
 #include <cstdlib>
 #include <sstream>
+#include <cstring> // for test code in main.
 
 using std::cout;
 using std::endl;
@@ -145,6 +146,11 @@ element basic_car(element s_exp){
   return string_get_substr(c1, BoxFromInt(0), BoxFromInt(Y));//c1.substr(0,Y);
 }
 
+struct ExitPrint{
+	ExitPrint(const std::string& t) : t(t) {}
+	~ExitPrint() { cout << t << " on return." << endl; }
+	std::string t;
+};
 element interp_function(element s_exp) {
   return Eval(basic_car(s_exp));
 }
@@ -163,12 +169,10 @@ element basic_cdr(element s_exp){
 	}
 	while (isspace(IntFromBox(string_get_char(a1, BoxFromInt(a))))) 
 		a++;
-	gc_add_root(&a1);
+	Rooter a1_r(a1);
 	element a2=newstr("(");
-	gc_add_root(&a2);
+	Rooter a2_r(a2);
 	a2 = string_append_string(a2, string_get_substr(a1, BoxFromInt(a)));//a2 += a1.substr(a);
-	gc_unroot(&a2);
-	gc_unroot(&a1);
 	return a2;
 }
 element interp_lambda(element s_exp) {
@@ -181,23 +185,15 @@ element interp_cdr(element s_exp){
   return basic_cdr(Eval(basic_car(s_exp)));
 }
 element interp_cons(element s_exp){
+	Rooter s_r(s_exp);
   element i=Eval(basic_car(s_exp));
   element t=Eval(basic_car(basic_cdr(s_exp)));
+  Rooter t_r(t);
   if (t==s_nil)
     return string_append_string(string_append_string(newstr("("),i),newstr(")"));
   //return std::string("(")+i+t.substr(1);
   return string_append_string(string_append_string(newstr("("),i),string_get_substr(t,BoxFromInt(1)));
 }
-struct Rooter {
-	Rooter(element& elt) : elt(elt) { gc_add_root(&elt); }
-	~Rooter() { gc_unroot(&elt); }
-	element& elt;
-};
-struct ExitPrint{
-	ExitPrint(const std::string& t) : t(t) {}
-	~ExitPrint() { cout << t << " on return." << endl; }
-	std::string t;
-};
 element interp_if(element s_exp){
 	Rooter x(s_exp);
 	element test = basic_car(s_exp);
@@ -223,6 +219,7 @@ element interp_equal(element s_exp){
 	return not_equal(left, right) ? s_nil:newstr("t");
 }
 element interp_less(element s_exp){
+	Rooter s_r(s_exp);
 	element left = Eval(basic_car(s_exp));
 	element right = Eval(basic_car(basic_cdr(s_exp)));
 	std::ostringstream o1; o1 << left; //ShowCar(o1, left);
@@ -231,7 +228,7 @@ element interp_less(element s_exp){
   //return atof(Eval(C(s_exp)).c_str())<atof(Eval(C(A(s_exp))).c_str())?"t":"()";
 }
 element interp_add(element s_exp){
-	Rooter x(s_exp);
+	Rooter s_r(s_exp);
 	element left = Eval(basic_car(s_exp));
 	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
@@ -242,7 +239,7 @@ element interp_add(element s_exp){
   return newstr(i.str().c_str());
 }
 element interp_sub(element s_exp){
-	Rooter x(s_exp);
+	Rooter s_r(s_exp);
 	element left = Eval(basic_car(s_exp));
 	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
@@ -253,7 +250,7 @@ element interp_sub(element s_exp){
   return newstr(i.str().c_str());
 }
 element interp_mul(element s_exp){
-	Rooter x(s_exp);
+	Rooter s_r(s_exp);
 	element left = Eval(basic_car(s_exp));
 	Rooter x0(left);
 	element right = Eval(basic_car(basic_cdr(s_exp)));
@@ -268,6 +265,8 @@ element table;
 bool builtins_loaded = false;
 void enter(element n, element v)
 {
+	Rooter n_r(n);
+	Rooter v_r(v);
 	table = array_append_element(table, cons(n, v));
 }
 void enter(element n, element (*f)(element))
@@ -283,6 +282,7 @@ element find(element n)
 	for (int i=IntFromBox(array_get_size(table)); i>0; --i)
 	{
 		element pair = array_get_element(table, BoxFromInt(i-1));
+		cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
 		element ifirst = car(pair);
 		if (ifirst == n)
 			return cdr(pair);
@@ -378,16 +378,18 @@ element Eval(element in)
 	//std::cout << "car: " << basic_car(in) << std::endl;
 	//std::cout << "cdr: " << basic_cdr(in) << std::endl;
 	
-	gc_add_root(&in);
+	Rooter in_r(in); // Root until we return.
 	element op = basic_car(in);
 	gc_add_root(&op);
 	
-	std::cout << "line "<< __LINE__ << " in "<< in << " op " << op << std::endl;
+	//std::cout << "line "<< __LINE__ << " in "<< in << " op " << op << std::endl;
+	cout << __FUNCTION__ << " in "<< in << " op " << op << ' '<<':'<<__FILE__<<':'<<__LINE__ << endl;
 	if (IntFromBox(string_get_char(op,BoxFromInt(0)))=='(')
 	{
 		op=Eval(op);
 	}
-	std::cout << "line "<< __LINE__ << " after refinement |"<< op <<'|'<< std::endl;
+	//std::cout << "line "<< __LINE__ << " after refinement |"<< op <<'|'<< std::endl;
+	cout << __FUNCTION__ << " after refinement |"<< op <<'|' << ':'<<__FILE__<<':'<<__LINE__ << endl;
 	
 	cout << "Calling find " << __LINE__ << endl;
 	element x = find(op);
@@ -408,15 +410,15 @@ element Eval(element in)
 	gc_unroot(&op);
 	if (BoxIsBuiltin(x))
 	{
-		gc_add_root(&x);
+		Rooter x_r(x);
 		Builtin f = BuiltinFromBox(x);
 		element r = f(basic_cdr(in));
-		gc_unroot(&x);
+		cout << __FUNCTION__ << " Result of built-in function " << r << " " << __FILE__ << ':' << __LINE__ <<endl;
 		return r;
 	}
 	
 	element lambda = x;
-	gc_add_root(&lambda); std::cout << "Rooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
+	Rooter lambda_r(lambda);
 	element formals = basic_car(lambda);
 	gc_add_root(&formals);
 	cout << __FUNCTION__ << ' ' << "getting actuals from cdr of " << in << std::endl;
@@ -424,7 +426,7 @@ element Eval(element in)
 	gc_add_root(&actuals);
 	element top = array_get_size(table);
 	while (formals != s_nil && actuals != s_nil) {
-		cout << __FUNCTION__ << ' ' << "formals: " << formals << " actuals " << actuals << std::endl;
+		cout << __FUNCTION__ << ' ' << "formals: " << formals << " actuals " << actuals << endl;
 		element formal = basic_car(formals);
 		gc_add_root(&formal);
 		element actual_expr = basic_car(actuals);
@@ -446,22 +448,34 @@ element Eval(element in)
 	//}
 	
 	gc_add_root(&body);
-	RootEnvironment();
+	//RootEnvironment();
 	element rv = Eval(body);
 	gc_unroot(&body);
-	gc_unroot(&lambda); std::cout << "Unrooted lambda " << lambda.num << ' ' << std::hex << lambda.type << std::dec << ' ' << lambda.tptr << std::endl;
-	
 
 	table = array_set_size(table, top);
+	element sz = array_get_size(table);
+	//if (sz != top)
+	{
+		cout << __FUNCTION__ << " After array_set_size("<< top << ") size is " << sz << " " << __FILE__ << ':' << __LINE__ <<endl;
+		cout << __FUNCTION__ << " Result of user function " << rv << " " << __FILE__ << ':' << __LINE__ <<endl;
+	}
 	return rv;
 }
 
-int main(int, char**)
+int main(int argc, char** argv)
 {
 	init_heap();
 	setup();// setup the environment.
 	RootEnvironment();
 	
+	if (argc==2 && strcmp(argv[1],"-t")==0)
+	{
+		cout << Eval(newstr("(defun fact (n) (if (equal n 0) 1 (* n (fact (- n 1)))))")) << endl;
+		cout << Eval(newstr("(fact 0)")) << endl;
+		cout << Eval(newstr("(fact 12)")) << endl;
+		cout << Eval(newstr("(fact 12.0)")) << endl;
+		return 0;
+	}
 	element in = newstr();
 	element* pin = &in;
 	gc_add_root(&in);
