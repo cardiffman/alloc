@@ -453,12 +453,7 @@ element Eval(element in)
 	gc_unroot(&body);
 
 	table = array_set_size(table, top);
-	element sz = array_get_size(table);
-	//if (sz != top)
-	{
-		cout << __FUNCTION__ << " After array_set_size("<< top << ") size is " << sz << " " << __FILE__ << ':' << __LINE__ <<endl;
-		cout << __FUNCTION__ << " Result of user function " << rv << " " << __FILE__ << ':' << __LINE__ <<endl;
-	}
+	cout << __FUNCTION__ << " Result of user function " << rv << " " << __FILE__ << ':' << __LINE__ <<endl;
 	return rv;
 }
 
