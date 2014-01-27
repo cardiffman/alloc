@@ -12,41 +12,35 @@ using std::endl;
 element Eval(element in);
 extern element NIL;
 
-/*int Q(element s_exp, int offs=0) {
-  int V=0;
-  int i=offs;
-  while (isspace(IntFromBox(string_get_char(s_exp, BoxFromInt(i)))))
-    i++;
-  int t=i;
-  while (V|!(isspace(IntFromBox(string_get_char(s_exp,BoxFromInt(t))))|IntFromBox(string_get_char(s_exp,BoxFromInt(t)))==')'||(IntFromBox(string_get_char(s_exp,BoxFromInt(t)))=='('&&t-i)))
-    V+=(IntFromBox(string_get_char(s_exp,BoxFromInt(t)))=='(')-(IntFromBox(string_get_char(s_exp,BoxFromInt(t)))==')'),t++;
-  return t-i;
-}*/
-element C(element s_exp){ 
+/*element C(element s_exp){ 
 	return car(s_exp);
-}
+}*/
 
-element R(element s_exp) {
+element interp_function(element s_exp) {
   return Eval(car(s_exp));
 }
-element A(element s_exp){
+/*element A(element s_exp){
 	return cdr(s_exp);
-}
-element Z(element s_exp) {
+}*/
+element interp_lambda(element s_exp) {
   return s_exp;
 }
-element c(element s_exp){
-  return C(Eval(C(s_exp)));
+element interp_car(element s_exp){
+	return car(Eval(car(s_exp)));
+  //return C(Eval(C(s_exp)));
 }
-element q(element s_exp){
-  return A(Eval(C(s_exp)));
+element interp_cdr(element s_exp){
+	return cdr(Eval(car(s_exp)));
+  //return A(Eval(C(s_exp)));
 }
-element t(element s_exp){
-  element i=Eval(C(s_exp));
-  element t=Eval(C(A(s_exp)));
+element interp_cons(element s_exp){
+  //element i=Eval(C(s_exp));
+  //element t=Eval(C(A(s_exp)));
+  element i=Eval(car(s_exp));
+  element t=Eval(car(cdr(s_exp)));
   return cons(i, t);
 }
-element F(element s_exp){
+element interp_if(element s_exp){
   return Eval(car(cdr((Eval(car(s_exp))==NIL)?cdr(s_exp):s_exp)));
 }
 bool L(element i, element s){
@@ -70,10 +64,10 @@ bool L(element i, element s){
 	//cout << " -> " << r << endl;
 	return r;
 }
-element b(element s_exp){
+element interp_equal(element s_exp){
   return L(Eval(car(s_exp)),Eval(car(cdr(s_exp))))?NIL:newstr("t");
 }
-element o(element s_exp){
+element interp_less(element s_exp){
 	element left = Eval(car(s_exp));
 	element right = Eval(car(cdr(s_exp)));
 	bool lt = false;
@@ -87,9 +81,9 @@ element o(element s_exp){
 		lt = left.num < right.num;
 	return lt ? newstr("t"):NIL;
 }
-element f(element s_exp){
-	element left = Eval(C(s_exp));
-	element right = Eval(C(A(s_exp)));
+element interp_add(element s_exp){
+	element left = Eval(car(s_exp));
+	element right = Eval(car(cdr(s_exp)));
 	if (BoxIsInteger(left) && BoxIsInteger(right))
 		return BoxFromInt(IntFromBox(left)+IntFromBox(right));
 	double d;
@@ -105,9 +99,9 @@ element f(element s_exp){
 	r.num = d;
 	return r;
 }
-element g(element s_exp){
-	element left = Eval(C(s_exp));
-	element right = Eval(C(A(s_exp)));
+element interp_sub(element s_exp){
+	element left = Eval(car(s_exp));
+	element right = Eval(car(cdr(s_exp)));
 	if (BoxIsInteger(left) && BoxIsInteger(right))
 		return BoxFromInt(IntFromBox(left)-IntFromBox(right));
 	double d;
@@ -123,9 +117,9 @@ element g(element s_exp){
 	r.num = d;
 	return r;
 }
-element h(element s_exp){
-	element left = Eval(C(s_exp));
-	element right = Eval(C(A(s_exp)));
+element interp_mul(element s_exp){
+	element left = Eval(car(s_exp));
+	element right = Eval(car(cdr(s_exp)));
 	if (BoxIsInteger(left) && BoxIsInteger(right))
 		return BoxFromInt(IntFromBox(left)*IntFromBox(right));
 	double d;
@@ -142,39 +136,30 @@ element h(element s_exp){
 	return r;
 }
 
-class strfn {
-public:
-  element get() const { return str; }
-  element exec(element ex) { return (*fn)(ex); }
-  strfn(element s) { str=s; fn=0; }
-  strfn(element (*f)(element)) { fn=f; str=NIL; }
-  strfn() { fn=0; str=NIL; }
-  bool func() const { return fn!=0; }
-private: 
-  element str; 
-  element (*fn)(element); 
-  
-};
-std::vector<std::pair<element,strfn> > table;
+element table;
+bool builtins_loaded = false;
 void enter(element n, element v)
 {
-  table.push_back(std::make_pair(n,strfn(v)));
+	Rooter n_r(n);
+	Rooter v_r(v);
+	table = array_append_element(table, cons(n, v));
 }
 void enter(element n, element (*f)(element))
 {
-  table.push_back(std::make_pair(n,strfn(f)));
+	Rooter n_r(n);
+	table = array_append_element(table, cons(n, BoxFromBuiltIn(f)));
 }
-strfn find(element n)
+element find(element n)
 {
-  for (size_t i=table.size();i>0;--i) {
-	  element ifirst = table[i-1].first;
-	  //cout << __FUNCTION__ << ' ' << ifirst << " vs " << n << " " << (ifirst==n) << endl;
-	  if (ifirst==n)
-		  return table[i-1].second;
-    if (table[i-1].first==n)
-      return table[i-1].second;
-  }
-  return strfn();
+	for (int i=IntFromBox(array_get_size(table)); i>0; --i)
+	{
+		element pair = array_get_element(table, BoxFromInt(i-1));
+		//cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
+		element ifirst = car(pair);
+		if (ifirst == n)
+			return cdr(pair);
+	}
+	return NIL;
 }
 element defun(element s_exp){
   element e=cdr(s_exp);
@@ -185,34 +170,40 @@ element defun(element s_exp){
 }
 struct bi { const char* name; element (*fn)(element); };
 bi builtins[] = {
-  "function", R,
-  "quote", C,
-  "lambda", Z,
+  "function", interp_function,
+  "quote", car,
+  "lambda", interp_lambda,
   "defun", defun,
-  "if", F,
-  "equal", b,
-  "<"  , o,
-  "+", f,
-  "-", g,
-  "*", h,
-  "car", c,
-  "cdr", q,
-  "cons", t,
+  "if", interp_if,
+  "equal", interp_equal,
+  "<"  , interp_less,
+  "+", interp_add,
+  "-", interp_sub,
+  "*", interp_mul,
+  "car", interp_car,
+  "cdr", interp_cdr,
+  "cons", interp_cons,
   0,0
 };
 void setup()
 {
-  if (table.size()==0) {
-    for (bi* b=builtins; b->name!=0; ++b) {
-      enter(newstr(b->name), b->fn);
-    }
-    enter(newstr("t"),newstr("t"));
-  }
+	if (!builtins_loaded) {
+		builtins_loaded = true;
+		table = array_create();
+		gc_add_root(&table); // This is permanent by the way.
+		for (bi* b=builtins; b->name!=0; ++b) {
+			enter(symbol_create(b->name), b->fn);
+		}
+		enter(symbol_create("t"),symbol_create("t"));
+		cout << table << endl;
+		cout << __FUNCTION__ << ' ' << "Built-ins installed" << " :" << __FILE__ << ':' << __LINE__ << endl;
+	}
 }
 element Eval(element in)
 {
+	//Rooter in_r(in);
 	setup();
-	//cout << "eval |" << in << '|' << endl;
+	cout << "eval |" << in << '|' << endl;
 	if (BoxIsInteger(in))
 		return in;
 	if (!isnan(in.num))
@@ -220,13 +211,13 @@ element Eval(element in)
 	if (in == NIL)
 		return in;
 #if 1
-	if (BoxIsString(in)) {
-		strfn x = find(in);
-		if (x.get() != NIL)
-			return x.get();
-		if (x.func()) {
+	if (BoxIsSymbol(in)) {
+		element x = find(in);
+		if (BoxIsBuiltin(x))
 			return in;
-		}
+		if (x == NIL)
+			cout << __FUNCTION__ << " Lookup of " << in << " returned "<< x << " " << __FILE__ << ':' << __LINE__ <<endl;
+		return x;
 	}
 #endif
 	//std::cout << "Is List "<< in << std::endl;
@@ -238,22 +229,34 @@ element Eval(element in)
 		op = Eval(op);
 	//std::cout << "after refinement "<< op << std::endl;
 	
-	strfn x = find(op);
-	if (x.func())
-		return x.exec(A(in));
+	element x = find(op);
+	Rooter x_r(x);
 	
-	element lambda = x.get();
-	element formals = C(lambda);
-	element actuals = A(in);
+	if (BoxIsBuiltin(x))
+	{
+		Builtin f = BuiltinFromBox(x);
+		element r = f(cdr(in));
+		cout << __FUNCTION__ << " Result of built-in function " << r << " " << __FILE__ << ':' << __LINE__ <<endl;
+		return r;
+	}
+	
+	element lambda = x;
+	Rooter lambda_r(lambda);
+	element formals = car(lambda);
+	Rooter formals_r(formals);
+	element actuals = cdr(in);
+	Rooter actuals_r(actuals);
 	//cout << "About to eval to environment" << endl;
-	size_t top = table.size();
+	element top = array_get_size(table);
 	while (formals != NIL && actuals != NIL) {
-		element formal = C(formals);
-		element actual = Eval(C(actuals));
+		element formal = car(formals);
+		Rooter formal_r(formal);
+		element actual = Eval(car(actuals));
 		//cout << "Entering "<< formal << " " << actual << endl;
+		Rooter actual_r(actual);
 		enter(formal, actual);
-		formals = A(formals);
-		actuals = A(actuals);
+		formals = cdr(formals);
+		actuals = cdr(actuals);
 	}
 	//cout <<"Body image: lambda " << lambda << endl; cout <<" cdr(lambda) " << cdr(lambda) <<  endl; cout <<" car(cdr(lambda)) "<< car(cdr(lambda)) << endl;
 	element body = car(cdr(lambda));
@@ -265,8 +268,7 @@ element Eval(element in)
 	element rv = Eval(body);
 	
 	
-	while (table.size()>top)
-		table.pop_back();
+	table=array_set_size(table, top);
 	
 	//cout << "Result is " << rv << endl;
 	return rv;
@@ -409,7 +411,7 @@ element read_obj(FILE* fp)
 		chartoatom(ch);
 	}
 	ungetc(ch,fp);
-	std::ostringstream os; ShowCar(os, atom);
+	std::ostringstream os; os << atom;
 	const char* ip = os.str().c_str();
 	char* tail=0;
 	long lval = strtol(ip, &tail, 10);
@@ -418,31 +420,41 @@ element read_obj(FILE* fp)
 	double dval = strtod(ip, &tail);
 	if (tail[0]==0 && tail!= ip)
 		atom.num = dval;
-	return atom;
+	return symbol_from_string(atom);
 }
-
+#include <cstring>
 extern element* alloc;
-int main(int, char**)
+int main(int argc, char** argv)
 {
 	init_heap();
-	NIL.type = BOXSTR_LISTTYPE;
-	NIL.tptr = 0;
+	if (argc==2 && strcmp(argv[1], "-t")==0)
+	{
+		setup();
+		extern element symbols;
+		cout << symbols << endl;
+		cout << table << endl;
+		element n = symbol_create("n");
+		element nm1 = cons(symbol_create("-"), cons(n,cons(BoxFromInt(1),NIL)));
+		element fnm1 = cons(symbol_create("fact"), cons(nm1,NIL));
+		element times = cons(symbol_create("*"), cons(n, cons(fnm1,NIL)));
+		element one = BoxFromInt(1);
+		element test = cons(symbol_create("equal"), cons(n, cons(BoxFromInt(0),NIL)));
+		element ifs = cons(symbol_create("if"), cons(test, cons(one, cons(times,NIL))));
+		element e = cons(symbol_create("defun"), cons(symbol_create("fact"), cons(cons(n,NIL),cons(ifs,NIL))));
+		cout << "Test expr " << e << endl;
+		element e2 = cons(symbol_create("fact"), cons(BoxFromDouble(50.0), NIL));
+		cout << "Test expr " << e2 << endl;
+		cout << Eval(e) << endl;
+		cout << Eval(e2) << endl;
+		return 0;
+	}
 	while (!feof(stdin))
 	{
 		cout << '[' << alloc << ']' << "> " << std::flush;
 		element e = read_obj(stdin);
 		cout << __FUNCTION__ << " The s-expr: " << e << endl;
-		//if (BoxIsList(e))
-		//	ShowList(cout, e);
-		//else
-		//	ShowCar(cout, e); 
-		//cout << endl;
 		element r = Eval(e);
 		cout << __FUNCTION__ << " Its value: " << r << endl;
-		//if (BoxIsList(r))
-		//	ShowList(cout, r);
-		//else
-		//	ShowCar(cout, r);
 		cout << endl;
 		dump_heap();
 	}
