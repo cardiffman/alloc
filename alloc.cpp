@@ -10,6 +10,7 @@
 using std::cout;
 using std::endl;
 using std::set;
+#if 0
 void LOG()
 {
 	cout << endl;
@@ -24,6 +25,10 @@ template <typename First, typename... Rest> void LOG(const First& first, const R
 	cout << first;
 	LOG(rest...);
 }
+#else
+#define LOG(x...) (void)0
+#endif
+
 
 /*
  *
@@ -450,13 +455,13 @@ element array_set_size(element array, element size)
 	{
 		data[0] = ElementFromInt(BOXSTR_ARRHDR, new_size);
 		// Downsizing seems to be slightly off.
-		cout << __FUNCTION__ << ' ' << "old:" << current_size << " new:" << new_size << ':' << __FILE__ << ':' << __LINE__ <<endl;
+		LOG(__FUNCTION__,' ',"old:",current_size," new:",new_size,':',__FILE__,':',__LINE__);
 	}
 	else
 	{
 		gc_add_root(&array);
 		NeedBump(new_size-current_size);
-		cout << __FUNCTION__ << " after NeedBump alloc is "<< alloc << ':' << __FILE__ << ':' << __LINE__ <<endl;
+		LOG(__FUNCTION__ ," after NeedBump alloc is ",alloc ,':',__FILE__,':',__LINE__);
 		gc_unroot(&array);
 		data = array.tptr;
 		data = bigger_mem(data, current_size+1, new_size+1);
@@ -665,7 +670,7 @@ element appel_forward(element p)
 			int cells = IntFromBox(next[0]);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
-			cout << __FUNCTION__ << " Moved "<< cells << "-element array from "<< p.tptr<<'-'<<(p.tptr+1+cells) << " to " << next << '-' << next+1+cells << ' ' <<':' << __FILE__ << ':' << __LINE__ <<endl;			
+			LOG(__FUNCTION__," Moved ",cells,"-element array from ",p.tptr,'-',(p.tptr+1+cells)," to ",next,'-',next+1+cells,' ',':',__FILE__,':',__LINE__);			
 			next[1+cells].num = 3.14159;
 			element r;
 			p.tptr[0].tptr = next;
@@ -685,7 +690,7 @@ void appel_collect()
 {
 	scan = tospace;
 	next = tospace;
-	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace<<'-'<<fromspace+kSpaceSize-1 << " scan " << scan << " next " << next << ':' << __FILE__ << ':' << __LINE__ <<endl;
+	LOG(__FUNCTION__,' ',"at start: from ",fromspace,'-',fromspace+kSpaceSize-1," scan ",scan," next ",next,':',__FILE__,':',__LINE__);
 	int kRoots = 0;
 	for (std::set<element*>::const_iterator i=roots.begin(); i!=roots.end(); ++i)
 	{
@@ -694,7 +699,7 @@ void appel_collect()
 			element di = (**i);
 			if (di == NIL || (!BoxIsForward(di) && !BoxIsForward(di.tptr[0])))
 			{
-#if 1
+#if 0
 			std::cout << *i;// << std::endl;
 			element* pdi = *i;
 			std::cout << " before "; ShowElement(std::cout, di);
@@ -709,7 +714,7 @@ void appel_collect()
 			// the old location will have a forwarding pointer in it.
 				
 			**i = appel_forward(*(*i));
-#if 1
+#if 0
 			di = (**i);
 			std::cout << ' ' << *i << " after "; ShowElement(std::cout, *pdi);
 			std::cout << ':' << __FILE__ << ':' << __LINE__ <<endl;
@@ -730,31 +735,19 @@ void appel_collect()
 		}
 		++kRoots;
 	}
-	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << ':' << __FILE__ << ':' << __LINE__ <<endl;
-	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << ':' << __FILE__ << ':' << __LINE__ <<endl;
+	LOG(__FUNCTION__,' ',kRoots," roots moved",':',__FILE__,':',__LINE__);
+	LOG(__FUNCTION__ ,' ',"scan ",scan," next ",next,':',__FILE__,':',__LINE__);
 #if 1
 	for (element* look = scan; look != next; ++look)
 	{
-		/*if (look->tptr[0].type == BOXSTR_STRHDR)
-		{
-			cout << __FUNCTION__ << ' ' << "item@" << look << ": str length " << *look << '('<< CellsForChars(IntFromBox(*look)) << ')' << endl;
-			for (int i=0; i<CellsForChars(IntFromBox(*look)); ++i)
-			{
-				cout << __FUNCTION__ << ' ' << "item@" << look+i+1 << ": "<< std::setw(2) << std::setfill('0') << std::hex << look[i+1].ch[0]<< look[i+1].ch[1]<< look[i+1].ch[2]<< look[i+1].ch[3]  << endl;
-				cout << std::setw(0) << std::dec;
-			}
-			look += CellsForChars(IntFromBox(*look));
-		}
-		else*/
-		std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<ElementDesc(*look)<<'='<<*look <<"]" << ':' << __FILE__ << ':' << __LINE__ <<endl;
+		LOG(__FUNCTION__ ,' ',"item@",look,": [",ElementDesc(*look),'=',*look,"]",':',__FILE__,':',__LINE__);
 	}
 #endif
 	while (scan < next)
 	{
 		element oldscan = scan[0];
 		*scan = appel_forward(*scan);
-		cout << __FUNCTION__ << ' ' << "q oldscan " << scan << '='; ShowElement(cout,oldscan);cout << " newscan "; ShowElement(cout,*scan); cout << ' '<< ':' << __FILE__ << ':' << __LINE__ <<endl;
-		//cout << __FUNCTION__ << ' ' << "q oldscan " << scan << '='; cout << oldscan << " newscan " << *scan << ' '<< ':' << __FILE__ << ':' << __LINE__ <<endl;
+		LOG(__FUNCTION__,' ',"q oldscan ",scan,'=',ElementDesc(oldscan)," newscan ",ElementDesc(*scan),' ',':',__FILE__,':',__LINE__);
 		if (oldscan.type == BOXSTR_LIST)
 			++ scan;
 		else if (oldscan.type == BOXSTR_STRING || oldscan.type == BOXSTR_SYMBOL)
@@ -817,7 +810,7 @@ void gc_collect()
 	tospace = fromspace;
 	fromspace = s;	
 	endspace = fromspace + kSpaceSize;
-	std::cout << "collect completed: fromspace " << fromspace << " alloc " << alloc << " endspace " << endspace << " free cells: " << endspace - alloc << ':' << __FILE__ << ':' << __LINE__ <<endl;
+	LOG("collect completed: fromspace ",fromspace," alloc ",alloc," endspace ",endspace," free cells: ",endspace - alloc,':',__FILE__,':',__LINE__);
 	memset(tospace, 0, sizeof(element)*kSpaceSize);
 }
 
