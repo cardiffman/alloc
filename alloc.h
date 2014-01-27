@@ -3,14 +3,15 @@
 #include <math.h> // isnan
 #include <stdint.h>
 
-enum Type { BOXSTR_LISTTYPE=0xFFFF0001, // pointer to a pair of elements. Typically the second in the pair is a list.
-			BOXSTR_FORWARDTYPE=0xFFFF0002, // a forwarding pointer
-			BOXSTR_STRINGTYPE=0xFFFF0003, // pointer to a STRHDR.
+enum Type { BOXSTR_LIST=0xFFFF0001, // pointer to a pair of elements. Typically the second in the pair is a list.
+			BOXSTR_FORWARD=0xFFFF0002, // a forwarding pointer
+			BOXSTR_STRING=0xFFFF0003, // pointer to a STRHDR.
 			BOXSTR_STRHDR, // contains a character count and is immediately followed by said characters
 			BOXSTR_ARRAY, // pointer to an ARRHDR.
 			BOXSTR_ARRHDR, // contains an element count and is immediately followed by said elements
 			BOXSTR_BUILTIN, // contains a pointer to a built-in function
-			BOXSTR_INTTYPE // contains an integer
+			BOXSTR_SYMBOL, // points to an interned string.
+			BOXSTR_INT // contains an integer
 		  };
 typedef union element {
   double num;
@@ -38,16 +39,18 @@ inline bool operator!=(const element& a, const element& b)
 	return !equal_data(a,b);
 }
 
-inline bool BoxIsList(const element& b) { return b.type == BOXSTR_LISTTYPE; }
+inline bool BoxIsList(const element& b) { return b.type == BOXSTR_LIST; }
 inline bool BoxIsDouble(const element& b) { return !isnan(b.num); }
-inline bool BoxIsForward(const element& b) { return b.type==BOXSTR_FORWARDTYPE; }
-inline bool BoxIsString(const element& b) {return b.type==BOXSTR_STRINGTYPE; }
-inline bool BoxIsInteger(const element& b) { return b.type==BOXSTR_INTTYPE; }
+inline bool BoxIsForward(const element& b) { return b.type==BOXSTR_FORWARD; }
+inline bool BoxIsString(const element& b) {return b.type==BOXSTR_STRING; }
+inline bool BoxIsSymbol(const element& b) {return b.type==BOXSTR_SYMBOL; }
+inline bool BoxIsInteger(const element& b) { return b.type==BOXSTR_INT; }
 inline bool BoxIsHeader(const element& b) { return b.type==BOXSTR_STRHDR||b.type==BOXSTR_ARRHDR; }
 inline bool BoxIsArray(const element& b) { return b.type==BOXSTR_ARRAY; }
 inline bool BoxIsBuiltin(const element& b) { return b.type==BOXSTR_BUILTIN; }
 inline int IntFromBox(const element& b) { return (int)(b.tptr); }
-inline element BoxFromInt(int x) { element e; e.type = BOXSTR_INTTYPE; e.tptr = (element*)x; return e; }
+inline element BoxFromInt(int x) { element e; e.type = BOXSTR_INT; e.tptr = (element*)x; return e; }
+inline element BoxFromDouble(double x) { element e; e.num = x; return e; }
 inline element ElementFromInt(Type t, int i) { element e; e.type = t; e.tptr = (element*)i; return e; }
 typedef element (*Builtin)(element);
 inline element BoxFromBuiltIn(element (*fn)(element)) { element e; e.type = BOXSTR_BUILTIN; e.tptr = (element*)fn; return e;}
@@ -66,6 +69,8 @@ element string_get_char(element str, element index);
 element string_get_substr(element str, element first);
 element string_get_substr(element str, element first, element count);
 element string_get_size(element str);
+element symbol_create(const char* asciz);
+element symbol_from_string(element str);
 element array_create();
 element array_create(element size);
 element array_append_element(element array, element elt);
@@ -81,6 +86,12 @@ void gc_add_root(element* root);
 void gc_unroot(element* root);
 void gc_collect();
 void init_heap();
+
+struct Rooter {
+	Rooter(element& elt) : elt(elt) { gc_add_root(&elt); }
+	~Rooter() { gc_unroot(&elt); }
+	element& elt;
+};
 
 // Awkward:
 void dump_heap();

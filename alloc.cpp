@@ -5,10 +5,25 @@
 #include <string.h>
 #include <cstdlib>
 #include <set>
+#include <sstream>
 
 using std::cout;
 using std::endl;
 using std::set;
+void LOG()
+{
+	cout << endl;
+}
+template <typename T> void LOG(const T& t)
+{
+	cout << t << endl;
+}
+
+template <typename First, typename... Rest> void LOG(const First& first, const Rest&... rest)
+{
+	cout << first;
+	LOG(rest...);
+}
 
 /*
  *
@@ -51,7 +66,7 @@ using std::set;
  * An element can be a header for a string.
  * An element can also be a forwarding pointer.
  */
-const char* typeNames[] = {"undf","LIST", "FRWD", "STRG","SHDR","ARRY","AHDR","BLTN","NTGR"};
+const char* typeNames[] = {"undf","LIST", "FRWD", "STRG","SHDR","ARRY","AHDR","BLTN","SYMB","NTGR"};
 
 typedef struct cons {
 	element car;
@@ -77,7 +92,7 @@ std::ostream& operator<<(std::ostream& out, const element& elt)
 {
 	if (BoxIsDouble(elt))
 		out << elt.num;// << '<' << std::hex << elt.type << elt.tptr << std::dec << '>';
-	else if (BoxIsString(elt))
+	else if (BoxIsString(elt) || BoxIsSymbol(elt))
 		ShowString(out, elt);
 	else if (BoxIsArray(elt))
 		ShowArray(out, elt);
@@ -100,7 +115,7 @@ element cdr(element cons)
 }
 void BuyRAM()
 {
-	std::cout << __FUNCTION__ << " Too many cells requested" << std::endl;
+	LOG(__FUNCTION__," Too many cells requested:",__FILE__,':',__LINE__);
 }
 
 void NeedBump(int cells)
@@ -109,7 +124,7 @@ void NeedBump(int cells)
 	{
 		if (cells < kSpaceSize)
 		{
-			std::cout << __FUNCTION__ << " cells requested " << cells <<" but GC needed" << std::endl;
+			LOG(__FUNCTION__," cells requested ",cells," but GC needed:",__FILE__,':',__LINE__);
 			// Fix it so that the heap is collected
 			// and alloc can provide the necessary cells.
 			gc_collect();
@@ -117,7 +132,7 @@ void NeedBump(int cells)
 		else
 		{
 			BuyRAM();
-			std::cout << __FUNCTION__ << " cells requested " << cells <<" but GC needed" << std::endl;
+            LOG(__FUNCTION__," cells requested ",cells," but GC needed:",__FILE__,':',__LINE__);
 			// Fix it so that the heap is collected
 			// and alloc can provide the necessary cells.
 			gc_collect();
@@ -128,8 +143,9 @@ void NeedBump(int cells)
 element newstr()
 {
 	NeedBump(1);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	element r;
-	r.type = BOXSTR_STRINGTYPE;
+	r.type = BOXSTR_STRING;
 	r.tptr = alloc;
 	alloc->type = BOXSTR_STRHDR;
 	alloc->tptr = (element*)0;
@@ -178,8 +194,9 @@ element newstr(const char* asciz)
 	int chars = strlen(asciz);
 	int cells = CellsForChars(chars);
 	NeedBump(cells+1);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	element r;
-	r.type = BOXSTR_STRINGTYPE;
+	r.type = BOXSTR_STRING;
 	r.tptr = alloc;
 	alloc[0] = ElementFromInt(BOXSTR_STRHDR, chars);
 	uint16_t* pchars = (uint16_t*)(alloc+1);
@@ -198,13 +215,43 @@ element string_append_char(element str, element ch)
 	int old_len_elements = CellsForChars(old_len_chars); // 2 bytes per ch = 4 bytes per element.
 	int new_len_chars = old_len_chars+1;
 	int new_len_elements = CellsForChars(new_len_chars);
+	// If the string needs the same number of cells it is a special case.
 	if (new_len_elements != old_len_elements)
 	{
 		gc_add_root(&str);
-		NeedBump(new_len_elements-old_len_elements);
+		// Check to see if string can be extended in place or has to move.
+		if (data == alloc-old_len_elements)
+		{
+			// The string is at the end of the heap.
+			if (alloc-old_len_elements+new_len_elements < endspace)
+			{
+				// There is room to extend the string in place.
+				gc_unroot(&str);
+				data = str.tptr;
+				data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
+				data[0] = ElementFromInt(BOXSTR_STRHDR, new_len_chars);
+				uint16_t* str_ptr = (uint16_t*)(data+1);
+				str_ptr[old_len_chars] = (uint16_t)IntFromBox(ch);
+				alloc++;
+				// str.tptr is still right
+				// str.type is still right
+				return str;
+			}
+			// The string cannot be extended in place
+		}
+		// String has to move. Check for room for new string.
+		NeedBump(new_len_elements+1);
+		LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 		gc_unroot(&str);
-		data = str.tptr;
-		data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
+		// Move the existing elements and header
+		memcpy(alloc, str.tptr, sizeof(element)*(old_len_elements+1));
+		alloc[0] = ElementFromInt(BOXSTR_STRHDR, new_len_chars);
+		uint16_t* str_ptr = (uint16_t*)(alloc+1);
+		str_ptr[old_len_chars] = (uint16_t)IntFromBox(ch);
+		str.tptr = alloc;
+		// str.type is still correct.
+		alloc += new_len_elements+1;
+		return str;
 	}
 	data[0] = ElementFromInt(BOXSTR_STRHDR, new_len_chars);
 	uint16_t* str_ptr = (uint16_t*)(data+1);
@@ -222,6 +269,7 @@ element string_append_string(element stra, element strb)
 	gc_add_root(&stra);
 	gc_add_root(&strb);
 	NeedBump(1+new_len_elements);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	gc_unroot(&stra);
 	gc_unroot(&strb);
 	element* adata = stra.tptr; // Don't do this before bump check
@@ -234,7 +282,7 @@ element string_append_string(element stra, element strb)
 	std::copy(achars, achars+a_len_chars, newdata);
 	std::copy(bchars, bchars+b_len_chars, newdata+a_len_chars);
 	alloc += 1+new_len_elements;
-	element result; result.type = BOXSTR_STRINGTYPE; result.tptr = newpayload;
+	element result; result.type = BOXSTR_STRING; result.tptr = newpayload;
 	return result;
 }
 
@@ -252,6 +300,7 @@ element string_get_substr(element str, element first)
 	gc_add_root(&str); // An example of having a root to know where it moved
 						// not just to keep it from being erased.
 	NeedBump(1+CellsForChars(srcSize-start));
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	gc_unroot(&str);
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
@@ -259,7 +308,7 @@ element string_get_substr(element str, element first)
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+srcSize, newdata);
 	alloc += 1+srcSize-start;
-	element result; result.type = BOXSTR_STRINGTYPE; result.tptr = newpayload;
+	element result; result.type = BOXSTR_STRING; result.tptr = newpayload;
 	return result;
 }
 element string_get_substr(element str, element first, element count)
@@ -268,6 +317,7 @@ element string_get_substr(element str, element first, element count)
 	int start = IntFromBox(first);
 	gc_add_root(&str);
 	NeedBump(1+CellsForChars(IntFromBox(count)));
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	gc_unroot(&str);
 	uint16_t* data = UCharsFromString(str);
 	element* newpayload = alloc;
@@ -275,7 +325,7 @@ element string_get_substr(element str, element first, element count)
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+start+IntFromBox(count), newdata);
 	alloc += 1+CellsForChars(IntFromBox(count));
-	element result; result.type = BOXSTR_STRINGTYPE; result.tptr = newpayload;
+	element result; result.type = BOXSTR_STRING; result.tptr = newpayload;
 	return result;
 }
 element string_get_size(element str)
@@ -285,6 +335,7 @@ element string_get_size(element str)
 element array_create()
 {
 	NeedBump(1);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	element r;
 	r.type = BOXSTR_ARRAY;
 	r.tptr = alloc;
@@ -295,6 +346,7 @@ element array_create()
 element array_create(element len)
 {
 	NeedBump(IntFromBox(len)+1);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	element r;
 	r.type = BOXSTR_ARRAY;
 	r.tptr = alloc;
@@ -310,15 +362,45 @@ element array_append_element(element array, element elt)
 	int new_len_elements = old_len_elements+1;
 	gc_add_root(&array);
 	gc_add_root(&elt);
-	NeedBump(1);
+	//NeedBump(1);
+	// If the array can be appended to in place, append to it.
+	// Else move it. NeedBump(1) followed by bigger_mem has the
+	// flaw that if it can't be appended in place then a bump
+	// for a whole new array is required.
+	if (data == alloc-old_len_elements)
+	{
+		// The array is at the end of the heap.
+		if (alloc-old_len_elements+new_len_elements < endspace)
+		{
+			// There is room to extend the array.
+			gc_unroot(&array);
+			gc_unroot(&elt);
+			data = array.tptr;
+			data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
+			data[0] = ElementFromInt(BOXSTR_ARRHDR, new_len_elements);
+			element* arr_ptr = data+1;
+			arr_ptr[old_len_elements] = elt;
+			array.tptr = data;
+			return array;
+		}
+	}
+	NeedBump(new_len_elements);
+	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	gc_unroot(&array);
 	gc_unroot(&elt);
-	data = array.tptr;
-	data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
-	data[0] = ElementFromInt(BOXSTR_ARRHDR, new_len_elements);
-	element* arr_ptr = data+1;
-	arr_ptr[old_len_elements] = elt;
-	array.tptr = data;
+	//data = array.tptr;
+	//data = bigger_mem(data, old_len_elements+1, new_len_elements+1);
+	//data[0] = ElementFromInt(BOXSTR_ARRHDR, new_len_elements);
+	//element* arr_ptr = data+1;
+	//arr_ptr[old_len_elements] = elt;
+	//array.tptr = data;
+	// The array has to be copied and then extended.
+	element* src = array.tptr;
+	memcpy(alloc, src, (1+old_len_elements)*sizeof(element));
+	alloc[old_len_elements+1] = elt;
+	array.tptr = alloc;
+	array.tptr[0] = ElementFromInt(BOXSTR_ARRHDR, new_len_elements);
+	alloc += 1+new_len_elements;
 	return array;
 }
 
@@ -345,6 +427,7 @@ element array_set_element(element array, element index, element elt)
 		// not the kind of element that moves: gc_add_root(&index);
 		gc_add_root(&elt);
 		NeedBump(i+1-size);
+		LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 		gc_unroot(&array);
 		gc_unroot(&elt);
 		data = array.tptr;
@@ -373,6 +456,7 @@ element array_set_size(element array, element size)
 	{
 		gc_add_root(&array);
 		NeedBump(new_size-current_size);
+		cout << __FUNCTION__ << " after NeedBump alloc is "<< alloc << ':' << __FILE__ << ':' << __LINE__ <<endl;
 		gc_unroot(&array);
 		data = array.tptr;
 		data = bigger_mem(data, current_size+1, new_size+1);
@@ -386,14 +470,34 @@ bool equal_data(const element& a, const element& b)
 	if (!isnan(a.num))
 		return a.num==b.num;
 	if (a.type != b.type)
-		return false;
+	{
+		// It is a question whether this widely-used equality test should
+		// compare strings and symbols as if they are interchangeable.
+		// Ordinarily if you want to use strings like symbols you could
+		// just intern them.
+		// For now we will do so.
+		if (a.type != BOXSTR_SYMBOL && b.type != BOXSTR_SYMBOL)
+			return false; // if neither type is symbol and the types are different they don't match.
+		// One of them is a symbol (because the above didn't stop us)
+		// One of them is not (because they differ).
+		if (a.type == BOXSTR_STRING || b.type == BOXSTR_STRING)
+		{
+			// If one of them is a string then it must be the symbol-string thing.
+			if (SizeOfString(a)==SizeOfString(b))
+				return memcmp(UCharsFromString(a), UCharsFromString(b), 2*SizeOfString(a))==0;
+			return false;// Both "string-like" so compare as such.
+		}
+		return false; // None of the exceptions pertain, and the types are different.
+	}
 	// Users of equal_data might want to compare to string values.
 	switch (a.type)
 	{
-	case BOXSTR_INTTYPE: 
-	case BOXSTR_LISTTYPE: 
+	case BOXSTR_INT: // integer values are encoded in the pointer.
+	case BOXSTR_LIST: // lists are different if they are in different places
 		return a.tptr == b.tptr;
-	case BOXSTR_STRINGTYPE:
+	case BOXSTR_SYMBOL: // symbols are interned so they should compare in this fashion.
+		return a.tptr == b.tptr;
+	case BOXSTR_STRING:
 		if (SizeOfString(a)==SizeOfString(b))
 			return memcmp(UCharsFromString(a), UCharsFromString(b), 2*SizeOfString(a))==0;
 		return false;
@@ -428,31 +532,9 @@ void ShowArray(std::ostream& out, const element& array)
 		out << elts[i];
 }
 
-#if 0
-// On its way out
-void ShowCar(std::ostream& out, const element& car)
-{
-	switch (car.type)
-	{
-	case BOXSTR_INTTYPE:
-		out << IntFromBox(car);
-		break;
-	case BOXSTR_STRINGTYPE:
-		ShowString(out, car);
-		break;
-	default:
-		if (car==NIL)
-			out << "()";
-		else
-			out << car; // displays in technical fashion if it's not a double.
-		break;
-	}
-}
-#endif
-
 void InnerShowList(std::ostream& out, const element &cons)
 {
-	if (cons.type == BOXSTR_LISTTYPE && cons.tptr == 0)
+	if (cons.type == BOXSTR_LIST && cons.tptr == 0)
 	{
 		return;
 	}
@@ -513,6 +595,10 @@ void ShowElement(std::ostream& os, element e)
 		os << ' ' << std::hex << typeNames[e.type-0xFFFF0000]<< std::dec << ' '<<e.tptr; 
 	}
 }
+std::string ElementDesc(element e)
+{
+	std::ostringstream os; ShowElement(os, e); return os.str();
+}
 
 std::set<element*> roots;
 
@@ -522,12 +608,12 @@ element* fromspace = space;
 void gc_add_root(element* root)
 {
 	element di = (*root);
-	if (!BoxIsDouble(di) && !BoxIsBuiltin(di) && !BoxIsInteger(di))
+	if (!BoxIsDouble(di) && !BoxIsBuiltin(di) && !BoxIsInteger(di) && di != NIL)
 	{
 		if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
 			roots.insert(root);
 		else
-			std::cout << "Root not in from space" << std::endl;
+			std::cout << "Root not in from space" << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	}
 }
 void gc_unroot(element* root)
@@ -541,26 +627,35 @@ element appel_forward(element p)
 	{
 		if (p.tptr->tptr >= tospace && p.tptr->tptr < tospace+kSpaceSize)
 			return p.tptr[0];
-		else if (p.type == BOXSTR_LISTTYPE)
+		else if (p.type == BOXSTR_LIST)
 		{
 			next[0] = p.tptr[0];
 			next[1] = p.tptr[1];
 			element r;
+			p.tptr[0].tptr = next;
+			//p.tptr[0].type = BOXSTR_FORWARD;
+			p.tptr[0].type = p.type;
 			r.tptr = next;
-			r.type = BOXSTR_LISTTYPE;
+			r.type = BOXSTR_LIST;
 			next += 2;
 			return r;
 		}
-		else if (p.type == BOXSTR_STRINGTYPE)
+		else if (p.type == BOXSTR_STRING || p.type == BOXSTR_SYMBOL)
 		{
+			Type type = p.type;
 			next[0] = p.tptr[0];
 			int chars = IntFromBox(next[0]);
 			int cells = CellsForChars(chars);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
 			element r;
+			//p.tptr = next;
+			//p.tptr[0].tptr = next;
+			//p.tptr[0].type = BOXSTR_FORWARD;
+			p.tptr[0].tptr = next;
+			p.tptr[0].type = p.type;
 			r.tptr = next;
-			r.type = BOXSTR_STRINGTYPE;
+			r.type = type;
 			next += 1 + cells;
 			return r;
 		}
@@ -570,12 +665,18 @@ element appel_forward(element p)
 			int cells = IntFromBox(next[0]);
 			if (cells != 0)
 				memcpy(next+1, p.tptr+1, cells*sizeof(element));
+			cout << __FUNCTION__ << " Moved "<< cells << "-element array from "<< p.tptr<<'-'<<(p.tptr+1+cells) << " to " << next << '-' << next+1+cells << ' ' <<':' << __FILE__ << ':' << __LINE__ <<endl;			
+			next[1+cells].num = 3.14159;
 			element r;
+			p.tptr[0].tptr = next;
+			p.tptr[0].type = p.type;
 			r.tptr = next;
 			r.type = BOXSTR_ARRAY;
 			next += 1 + cells;
 			return r;
 		}
+		else
+			*next++ = p.tptr[0];
 	}
 	else
 		return p;
@@ -584,28 +685,53 @@ void appel_collect()
 {
 	scan = tospace;
 	next = tospace;
-	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace<<'-'<<fromspace+kSpaceSize-1 << " scan " << scan << " next " << next << std::endl;
+	std::cout << __FUNCTION__ << ' ' << "at start: from " << fromspace<<'-'<<fromspace+kSpaceSize-1 << " scan " << scan << " next " << next << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	int kRoots = 0;
 	for (std::set<element*>::const_iterator i=roots.begin(); i!=roots.end(); ++i)
 	{
-		if (!BoxIsDouble(**i))
+		//if (!BoxIsDouble(**i))
 		{
+			element di = (**i);
+			if (di == NIL || (!BoxIsForward(di) && !BoxIsForward(di.tptr[0])))
+			{
 #if 1
 			std::cout << *i;// << std::endl;
-			element di = (**i);
+			element* pdi = *i;
 			std::cout << " before "; ShowElement(std::cout, di);
 #endif
+			// The iterator yields addresses of elements that need to be 
+			// retained. To retain them we need to move them to the tospace.
+			// To keep from moving the same one a million times we need to
+			// mark the old location of the element.
+			// The address itself is some variable outside the heap that
+			// needs to be updated to the new location. When the element is
+			// first moved, it's easy. When the second pointer comes along,
+			// the old location will have a forwarding pointer in it.
+				
 			**i = appel_forward(*(*i));
 #if 1
 			di = (**i);
-			std::cout << " after "; ShowElement(std::cout, di);
-			std::cout << std::endl;
+			std::cout << ' ' << *i << " after "; ShowElement(std::cout, *pdi);
+			std::cout << ':' << __FILE__ << ':' << __LINE__ <<endl;
 #endif
+			}
+			else
+			{
+				// The variable has been forwarded.
+				cout << "F " << *i 
+					 << " var's contents " << ElementDesc(di) 
+					 << " where var points " << di.tptr 
+					 << " what is there: " << ElementDesc(di.tptr[0])
+						<< " where that cell points " << (di.tptr[0].tptr)
+						<< " what is there " << ElementDesc(di.tptr[0].tptr[0])
+					 << std::endl;
+				
+			}
 		}
 		++kRoots;
 	}
-	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << std::endl;
-	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << std::endl;
+	std::cout << __FUNCTION__ << ' ' << kRoots << " roots moved" << ':' << __FILE__ << ':' << __LINE__ <<endl;
+	std::cout << __FUNCTION__ << ' ' << "scan " << scan << " next " << next << ':' << __FILE__ << ':' << __LINE__ <<endl;
 #if 1
 	for (element* look = scan; look != next; ++look)
 	{
@@ -620,16 +746,18 @@ void appel_collect()
 			look += CellsForChars(IntFromBox(*look));
 		}
 		else*/
-			std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<*look <<"]" << std::endl;
+		std::cout << __FUNCTION__ << ' ' << "item@" << look << ": ["<<ElementDesc(*look)<<'='<<*look <<"]" << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	}
 #endif
 	while (scan < next)
 	{
 		element oldscan = scan[0];
 		*scan = appel_forward(*scan);
-		if (oldscan.type == BOXSTR_LISTTYPE)
+		cout << __FUNCTION__ << ' ' << "q oldscan " << scan << '='; ShowElement(cout,oldscan);cout << " newscan "; ShowElement(cout,*scan); cout << ' '<< ':' << __FILE__ << ':' << __LINE__ <<endl;
+		//cout << __FUNCTION__ << ' ' << "q oldscan " << scan << '='; cout << oldscan << " newscan " << *scan << ' '<< ':' << __FILE__ << ':' << __LINE__ <<endl;
+		if (oldscan.type == BOXSTR_LIST)
 			++ scan;
-		else if (oldscan.type == BOXSTR_STRINGTYPE)
+		else if (oldscan.type == BOXSTR_STRING || oldscan.type == BOXSTR_SYMBOL)
 			++ scan;
 		else if (oldscan.type == BOXSTR_STRHDR)
 		{
@@ -643,6 +771,13 @@ void appel_collect()
 			++ scan;
 	}
 	alloc = next;	
+	extern element table;
+	int sz = IntFromBox(array_get_size(table));
+	for (int s=0; s<sz; ++s)
+	{
+		element e = array_get_element(table, BoxFromInt(s));
+		LOG(__FUNCTION__," TABLE ELEMENT ",s," is ",e," :",__FILE__,':',__LINE__);
+	}
 }
 
 // \brief Make from a forwarding pointer that points where to points
@@ -650,7 +785,7 @@ void appel_collect()
 void ForwardFrom(element* from, element* to)
 {
 	from->tptr = to;
-	from->type = BOXSTR_FORWARDTYPE;
+	from->type = BOXSTR_FORWARD;
 }
 
 /* \brief cons
@@ -670,7 +805,7 @@ element cons(element car, element cdr)
 	cell.cdr = cdr;
 	element r;
 	r.tptr = alloc;
-	r.type = BOXSTR_LISTTYPE;
+	r.type = BOXSTR_LIST;
 	alloc += 2;
 	return r;
 }
@@ -682,8 +817,45 @@ void gc_collect()
 	tospace = fromspace;
 	fromspace = s;	
 	endspace = fromspace + kSpaceSize;
-	std::cout << "collect completed: fromspace " << fromspace << " alloc " << alloc << " endspace " << endspace << " free cells: " << endspace - alloc << std::endl;
+	std::cout << "collect completed: fromspace " << fromspace << " alloc " << alloc << " endspace " << endspace << " free cells: " << endspace - alloc << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	memset(tospace, 0, sizeof(element)*kSpaceSize);
+}
+
+element symbol_create(const char* asciz)
+{
+	element t = newstr(asciz);
+	return symbol_from_string(t);
+}
+element symbols;
+element symbol_from_string(element t)
+{
+	element initial = string_get_char(t, BoxFromInt(0));
+	int initialChar = IntFromBox(initial);
+	int iBucket = 0;
+	if (initialChar >= 'A' && initialChar <= 'Z')
+		iBucket = initialChar - 'A';
+	else if (initialChar >= 'a' && initialChar <= 'z')
+		iBucket = initialChar - 'a';
+	else
+		iBucket = initialChar % 26;
+	element bucket = array_get_element(symbols, BoxFromInt(iBucket));
+	element search = bucket;
+	while (search != NIL)
+	{
+		element s = car(search);
+		if (s == t)
+			return s;
+		search = cdr(search);
+	}
+	Rooter t_r(t);
+	Rooter bucket_r(bucket);
+	element sym;
+	sym.type = BOXSTR_SYMBOL;
+	sym.tptr = t.tptr;
+	Rooter sym_r(sym);
+	bucket = cons(sym, bucket);
+	array_set_element(symbols, BoxFromInt(iBucket), bucket);
+	return sym;
 }
 
 void init_heap()
@@ -693,22 +865,26 @@ void init_heap()
 	tospace = space+kSpaceSize;
 	fromspace = space;
 	alloc = space;
-	NIL.type = BOXSTR_LISTTYPE; 
+	NIL.type = BOXSTR_LIST; 
 	NIL.tptr = 0;
+	symbols = array_create(BoxFromInt(26));
+	for (int i=0; i<26; ++i)
+		array_set_element(symbols, BoxFromInt(i), NIL);
+	gc_add_root(&symbols);
 }
 void dump_heap()
 {
-	std::cout << __FUNCTION__ << ' ' << std::hex << "fromspace " << space << std::endl;
-	std::cout << __FUNCTION__ << ' ' << std::hex << "alloc " << alloc << std::endl;
+	std::cout << __FUNCTION__ << ' ' << std::hex << "fromspace " << space << ':' << __FILE__ << ':' << __LINE__ <<endl;
+	std::cout << __FUNCTION__ << ' ' << std::hex << "alloc " << alloc << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	for (int t=0; space+t < alloc; ++t)
-		std::cout << __FUNCTION__ << ' ' << "cell " << t << ' ' << space+t << ':' << space[t] << std::endl;
+		std::cout << __FUNCTION__ << ' ' << "cell " << t << ' ' << space+t << ':' << space[t] << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	
 }
 void dump_new_heap()
 {
-	std::cout << __FUNCTION__ << ' ' << "alloc " << alloc << ", alloc[-1]=" << alloc[-1] << ' ' << std::endl;
+	std::cout << __FUNCTION__ << ' ' << "alloc " << alloc << ", alloc[-1]=" << alloc[-1] << ' ' << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	//for (int t=0; t<5; ++t)
-	//	std::cout << __FUNCTION__ << ' ' << "fromspace cell " << t << ' ' << space+t << ": " << space[t] << std::endl;
+	//	std::cout << __FUNCTION__ << ' ' << "fromspace cell " << t << ' ' << space+t << ": " << space[t] << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	for (int t=0; /*t<10;*/tospace+t < alloc; ++t)
-		std::cout << __FUNCTION__ << ' ' << "tospace cell " << t << ' ' << tospace+t << ':' << tospace[t] << std::endl;
+		std::cout << __FUNCTION__ << ' ' << "tospace cell " << t << ' ' << tospace+t << ':' << tospace[t] << ':' << __FILE__ << ':' << __LINE__ <<endl;
 }
