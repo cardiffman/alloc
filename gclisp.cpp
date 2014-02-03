@@ -65,7 +65,7 @@ bool L(element i, element s){
 	return r;
 }
 element interp_equal(element s_exp){
-  return L(Eval(car(s_exp)),Eval(car(cdr(s_exp))))?NIL:newstr("t");
+  return L(Eval(car(s_exp)),Eval(car(cdr(s_exp))))?NIL:symbol_create("t");
 }
 element interp_less(element s_exp){
 	element left = Eval(car(s_exp));
@@ -79,7 +79,7 @@ element interp_less(element s_exp){
 		lt = left.num < IntFromBox(right);
 	else if (!isnan(left.num) && !isnan(right.num))
 		lt = left.num < right.num;
-	return lt ? newstr("t"):NIL;
+	return lt ? symbol_create("t"):NIL;
 }
 element interp_add(element s_exp){
 	element left = Eval(car(s_exp));
@@ -199,10 +199,32 @@ void setup()
 		cout << __FUNCTION__ << ' ' << "Built-ins installed" << " :" << __FILE__ << ':' << __LINE__ << endl;
 	}
 }
+void check_setup()
+{
+	for (int i=IntFromBox(array_get_size(table)); i>0; --i)
+	{
+		element pair = array_get_element(table, BoxFromInt(i-1));
+		if (!BoxIsList(pair))
+		{
+			cout << __FUNCTION__ << " Element " << i << " of the environment is not a pair :" <<__FILE__<<':'<<__LINE__<<endl;
+			throw "bad setup";
+		}
+		//cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
+		element name = car(pair);
+		if (!BoxIsSymbol(name))
+		{
+			cout << __FUNCTION__ << " Element " << i << " car is not a symbol :" <<__FILE__<<':'<<__LINE__<<endl;
+			throw "bad setup";
+		}
+		// The names in the environment cannot be limited to a particular type.
+	}
+}
+
 element Eval(element in)
 {
 	//Rooter in_r(in);
 	setup();
+	//check_setup();
 	cout << "eval |" << in << '|' << endl;
 	if (BoxIsInteger(in))
 		return in;
@@ -220,6 +242,8 @@ element Eval(element in)
 		return x;
 	}
 #endif
+	if (!BoxIsList(in))
+		return in;
 	//std::cout << "Is List "<< in << std::endl;
 	//std::cout << "car: " << car(in) << std::endl;
 	//std::cout << "cdr: " << cdr(in) << std::endl;

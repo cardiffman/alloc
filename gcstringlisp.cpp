@@ -133,10 +133,28 @@ void oldQBody()
 	//return t-i;	
 }
 
+#define NOTE_ADD_ROOT(arg) \
+	do \
+	{ \
+		cout << "add_root "; ShowElement(cout,arg); \
+		if (BoxIsString(arg)||BoxIsSymbol(arg)) \
+		{ \
+			if (IntFromBox(string_get_size(arg))<60) \
+				cout << '|'<<arg<<'|'; \
+		} \
+		cout <<':'<< __LINE__ << endl; \
+	} while (false)
+
+
 element basic_car(element s_exp){ 
 	if (equal_data(BoxFromInt(0), string_get_size(s_exp)))
 		return s_exp;
+	gc_add_root(&s_exp);
+	NOTE_ADD_ROOT(s_exp);
 	element c1 = string_get_substr(s_exp, BoxFromInt(1));// std::string c1=s_exp.substr(1);
+	gc_unroot(&s_exp);
+	Rooter c1_r(c1);
+	NOTE_ADD_ROOT(c1);
   int Y=Q(c1);
   if (Y>1024)
   {
@@ -268,6 +286,9 @@ void enter(element n, element v)
 	Rooter n_r(n);
 	Rooter v_r(v);
 	table = array_append_element(table, cons(n, v));
+	void check_setup();
+	if (IntFromBox(array_get_size(table))==177)
+		check_setup();
 }
 void enter(element n, element (*f)(element))
 {
@@ -282,7 +303,7 @@ element find(element n)
 	for (int i=IntFromBox(array_get_size(table)); i>0; --i)
 	{
 		element pair = array_get_element(table, BoxFromInt(i-1));
-		cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
+		//cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
 		element ifirst = car(pair);
 		if (ifirst == n)
 			return cdr(pair);
@@ -330,9 +351,38 @@ void setup()
 		gc_add_root(&table);
 	}
 }
+void check_setup()
+{
+	for (int i=IntFromBox(array_get_size(table)); i>0; --i)
+	{
+		element pair = array_get_element(table, BoxFromInt(i-1));
+		if (!BoxIsList(pair))
+		{
+			cout << __FUNCTION__ << " Element " << i << " of the environment is not a pair :" <<__FILE__<<':'<<__LINE__<<endl;
+			cout << __FUNCTION__ << " Presently " << array_get_size(table) << " elements in table :" <<__FILE__<<':'<<__LINE__<<endl;
+			cout << table << endl;
+			throw "bad setup";
+		}
+		//cout << __FUNCTION__ << " n " << n << " vs. " << pair << " :" <<__FILE__<<':'<<__LINE__<<endl;
+		element name = car(pair);
+		if (!BoxIsString(name))
+		{
+			cout << __FUNCTION__ << " Element " << i << " car is not a string :" <<__FILE__<<':'<<__LINE__<<endl;
+			throw "bad setup";
+		}
+		// The names in the environment cannot be limited to a particular type.
+	}
+}
+
+inline bool string_holds_list(element str)
+{
+	return IntFromBox(string_get_char(str, BoxFromInt(0)))=='(';
+}
+
 element Eval(element in)
 {
 	setup();
+	check_setup();
 	cout << __FUNCTION__ << " arg |" << in << "|[";ShowElement(cout,in);cout<<"]:"<<__FILE__<<':'<<__LINE__ << endl;
 	if (string_get_size(in)==BoxFromInt(0))
 	{
@@ -344,7 +394,6 @@ element Eval(element in)
 		cout << " bad expr " << endl;
 		*(int*)0 = 11;
 	}
-	cout << __FUNCTION__ << " sizeof visible rep isn't zero? "<<os.str().size() <<':'<<__FILE__<<':'<<__LINE__ << endl;
 	if (isdigit(IntFromBox(string_get_char(in, BoxFromInt(0)))))
 	{
 		cout << __FUNCTION__ << " returning "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
@@ -353,7 +402,7 @@ element Eval(element in)
 	if(in==s_nil)
 		return in;
 #if 1
-	if (IntFromBox(string_get_char(in,BoxFromInt(0)))!='(') {
+	if (!string_holds_list(in)) {
 		cout << __FUNCTION__ << " Calling find with "<< in <<':'<<__FILE__<<':'<<__LINE__ << endl;
 		element x = find(in);
 		cout << "Lookup "<<in<<" result: ";
@@ -379,19 +428,21 @@ element Eval(element in)
 	//std::cout << "cdr: " << basic_cdr(in) << std::endl;
 	
 	Rooter in_r(in); // Root until we return.
+	cout << "add_root " << __LINE__ << endl;
 	element op = basic_car(in);
 	gc_add_root(&op);
+	cout << "add_root " << __LINE__ << endl;
 	
 	//std::cout << "line "<< __LINE__ << " in "<< in << " op " << op << std::endl;
 	cout << __FUNCTION__ << " in "<< in << " op " << op << ' '<<':'<<__FILE__<<':'<<__LINE__ << endl;
-	if (IntFromBox(string_get_char(op,BoxFromInt(0)))=='(')
+	if (string_holds_list(op))
 	{
 		op=Eval(op);
 	}
 	//std::cout << "line "<< __LINE__ << " after refinement |"<< op <<'|'<< std::endl;
 	cout << __FUNCTION__ << " after refinement |"<< op <<'|' << ':'<<__FILE__<<':'<<__LINE__ << endl;
 	
-	cout << "Calling find " << __LINE__ << endl;
+	cout << "Calling find with " << op << ':' << __FILE__<<':'<<__LINE__ << endl;
 	element x = find(op);
 	std::ostringstream ck; ck << x; if (ck.str().size()==0) {
 		for (int i=0; i<IntFromBox(array_get_size(table)); ++i)
@@ -406,11 +457,10 @@ element Eval(element in)
 	cout << "Lookup result: "; if (!BoxIsBuiltin(x)) cout << x;
 	if (BoxIsBuiltin(x))
 		cout << "a built-in called " << op;
-	cout << endl;
+	cout << ':'<<__FILE__<<':'<<__LINE__ <<endl;
 	gc_unroot(&op);
 	if (BoxIsBuiltin(x))
 	{
-		Rooter x_r(x);
 		Builtin f = BuiltinFromBox(x);
 		element r = f(basic_cdr(in));
 		cout << __FUNCTION__ << " Result of built-in function " << r << " " << __FILE__ << ':' << __LINE__ <<endl;
@@ -419,23 +469,32 @@ element Eval(element in)
 	
 	element lambda = x;
 	Rooter lambda_r(lambda);
+	NOTE_ADD_ROOT(lambda);
 	element formals = basic_car(lambda);
 	gc_add_root(&formals);
+	NOTE_ADD_ROOT(formals);
 	cout << __FUNCTION__ << ' ' << "getting actuals from cdr of " << in << std::endl;
 	element actuals = basic_cdr(in);
 	gc_add_root(&actuals);
+	NOTE_ADD_ROOT(actuals);
 	element top = array_get_size(table);
 	while (formals != s_nil && actuals != s_nil) {
 		cout << __FUNCTION__ << ' ' << "formals: " << formals << " actuals " << actuals << endl;
 		element formal = basic_car(formals);
 		gc_add_root(&formal);
+		NOTE_ADD_ROOT(formal);
 		element actual_expr = basic_car(actuals);
 		cout << __FUNCTION__ << ' ' << "formal: " << formal<< " actual expr " << actual_expr << endl;
 		gc_add_root(&actual_expr);
+		NOTE_ADD_ROOT(actual_expr);
 		element actual = Eval(actual_expr);
 		gc_unroot(&actual_expr);
+		gc_add_root(&actual);
+		NOTE_ADD_ROOT(actual);
 		cout << __FUNCTION__ << ' ' << "formal: " << formal << " actual " << actual << endl;
 		enter(formal, actual);
+		gc_unroot(&formal);
+		gc_unroot(&actual);
 		formals = basic_cdr(formals);
 		actuals = basic_cdr(actuals);
 	}
@@ -448,6 +507,7 @@ element Eval(element in)
 	//}
 	
 	gc_add_root(&body);
+	NOTE_ADD_ROOT(body);
 	//RootEnvironment();
 	element rv = Eval(body);
 	gc_unroot(&body);
@@ -465,17 +525,25 @@ int main(int argc, char** argv)
 	
 	if (argc==2 && strcmp(argv[1],"-t")==0)
 	{
+		try {
 		cout << Eval(newstr("(defun fact (n) (if (equal n 0) 1 (* n (fact (- n 1)))))")) << endl;
 		cout << Eval(newstr("(fact 0)")) << endl;
 		cout << Eval(newstr("(fact 12)")) << endl;
 		cout << Eval(newstr("(fact 12.0)")) << endl;
+		cout << Eval(newstr("(fact 13.0)")) << endl;
+		cout << Eval(newstr("(fact 100.0)")) << endl;
+		cout << Eval(newstr("(fact 1000.0)")) << endl;
+		} catch (const char* err) {
+			cout << "Exception " << err << endl;
+			return 1;
+		}
 		return 0;
 	}
 	element in = newstr();
-	element* pin = &in;
 	gc_add_root(&in);
 	while (true) {
 		cout << "> " << std::flush;
+		try {
 		int parens=0;
 		int ch;
 		while(parens|!isspace(ch=getchar())){
@@ -490,6 +558,10 @@ int main(int argc, char** argv)
 		}
 		cout << Eval(in) << endl;
 		in=newstr();
+		} catch (const char* err) {
+			cout << "Exception " << err << endl;
+			return 1;
+		}
 	}
 	
 }

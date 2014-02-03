@@ -28,6 +28,20 @@ template <typename First, typename... Rest> void LOG(const First& first, const R
 #else
 #define LOG(x...) (void)0
 #endif
+void XLOG()
+{
+	cout << endl;
+}
+template <typename T> void XLOG(const T& t)
+{
+	cout << t << endl;
+}
+
+template <typename First, typename... Rest> void XLOG(const First& first, const Rest&... rest)
+{
+	cout << first;
+	XLOG(rest...);
+}
 
 
 /*
@@ -83,7 +97,7 @@ typedef struct strhdr {
 } strhdr;
 
 element NIL;
-static const int kSpaceSize = 1024;
+static const int kSpaceSize = 65536;
 element space[2*kSpaceSize];
 element* alloc = space;
 element* tospace = space+kSpaceSize;
@@ -133,6 +147,10 @@ void NeedBump(int cells)
 			// Fix it so that the heap is collected
 			// and alloc can provide the necessary cells.
 			gc_collect();
+			if (alloc+cells > endspace)
+			{
+				throw "NeedBump has not recovered enough space";
+			}
 		}
 		else
 		{
@@ -312,7 +330,7 @@ element string_get_substr(element str, element first)
 	alloc[0] = ElementFromInt(BOXSTR_STRHDR, srcSize-start);
 	uint16_t* newdata = (uint16_t*)(alloc+1);
 	std::copy(data+start, data+srcSize, newdata);
-	alloc += 1+srcSize-start;
+	alloc += 1+CellsForChars(srcSize-start);
 	element result; result.type = BOXSTR_STRING; result.tptr = newpayload;
 	return result;
 }
@@ -372,10 +390,10 @@ element array_append_element(element array, element elt)
 	// Else move it. NeedBump(1) followed by bigger_mem has the
 	// flaw that if it can't be appended in place then a bump
 	// for a whole new array is required.
-	if (data == alloc-old_len_elements)
+	if (data == alloc-old_len_elements-1)
 	{
 		// The array is at the end of the heap.
-		if (alloc-old_len_elements+new_len_elements < endspace)
+		if (alloc-old_len_elements-1+new_len_elements+1 < endspace)
 		{
 			// There is room to extend the array.
 			gc_unroot(&array);
@@ -389,7 +407,7 @@ element array_append_element(element array, element elt)
 			return array;
 		}
 	}
-	NeedBump(new_len_elements);
+	NeedBump(new_len_elements+1);
 	LOG(__FUNCTION__," after NeedBump alloc is ",alloc,':',__FILE__,':',__LINE__);
 	gc_unroot(&array);
 	gc_unroot(&elt);
@@ -618,7 +636,7 @@ void gc_add_root(element* root)
 		if (di.tptr >= fromspace && di.tptr < fromspace+kSpaceSize)
 			roots.insert(root);
 		else
-			std::cout << "Root not in from space" << ':' << __FILE__ << ':' << __LINE__ <<endl;
+			std::cout << "Root "<< root << '['<< ElementDesc(di) <<"] not in from space ("<<fromspace<<':'<<fromspace+kSpaceSize<<")" << ':' << __FILE__ << ':' << __LINE__ <<endl;
 	}
 }
 void gc_unroot(element* root)
@@ -697,6 +715,13 @@ void appel_collect()
 		//if (!BoxIsDouble(**i))
 		{
 			element di = (**i);
+			if (BoxIsDouble(di))
+			{
+				cout << "F root contains float: var address: " << *i
+					 << " var's contents: " << ElementDesc(di) 
+					 << std::endl;
+				continue;
+			}
 			if (di == NIL || (!BoxIsForward(di) && !BoxIsForward(di.tptr[0])))
 			{
 #if 0
@@ -811,6 +836,11 @@ void gc_collect()
 	fromspace = s;	
 	endspace = fromspace + kSpaceSize;
 	LOG("collect completed: fromspace ",fromspace," alloc ",alloc," endspace ",endspace," free cells: ",endspace - alloc,':',__FILE__,':',__LINE__);
+	if (alloc==endspace)
+	{
+		LOG("No free space in ",kSpaceSize*sizeof(element)," bytes");
+		throw "No space left";
+	}
 	memset(tospace, 0, sizeof(element)*kSpaceSize);
 }
 
